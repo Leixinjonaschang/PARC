@@ -18,8 +18,6 @@ def train_tracker(config):
     #iter_index = config["iter_index"]
 
     in_model_file = config.get("in_model_file", None)
-    if in_model_file == "None" or in_model_file == "":
-        in_model_file = None
 
     if "create_dataset_config" in config:
         create_dataset_config = yaml.safe_load(Path(config["create_dataset_config"]).read_text())
