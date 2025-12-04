@@ -8,6 +8,16 @@ import copy
 from util.logger import Logger
 import util.torch_util as torch_util
 from anim.kin_char_model import KinCharModel
+
+import sys
+try:
+    import numpy.core
+    sys.modules['numpy._core'] = np.core
+    if hasattr(np.core, 'multiarray'):
+        sys.modules['numpy._core.multiarray'] = np.core.multiarray
+except ImportError:
+    pass
+
 class LoopMode(enum.Enum):
     CLAMP = 0
     WRAP = 1
@@ -238,7 +248,6 @@ class MotionLib():
             
             with open(curr_file, "rb") as filestream:
                 curr_motion = pickle.load(filestream)
-
                 fps = 30 if "fps" not in curr_motion else curr_motion["fps"]
                 if isinstance(fps, np.ndarray):
                     fps = fps.item()
