@@ -785,6 +785,57 @@ def get_capsule_point_surface_samples(
     capsule_points = torch.cat(capsule_points, dim=0)
     return capsule_points
 
+def get_mesh_aabb_corner_samples(mesh_bounds, device):
+    """
+    Generate 8 corner points from mesh AABB bounds.
+    mesh_bounds: (2, 3) numpy array [min_xyz, max_xyz]
+    """
+    min_xyz = mesh_bounds[0]
+    max_xyz = mesh_bounds[1]
+    
+    x = [min_xyz[0], max_xyz[0]]
+    y = [min_xyz[1], max_xyz[1]]
+    z = [min_xyz[2], max_xyz[2]]
+    
+    # Efficiently generate 8 corners by creating all combinations
+    # Using list comprehension then tensor conversion
+    corners = [[ix, iy, iz] for ix in x for iy in y for iz in z]
+    mesh_points = torch.tensor(corners, dtype=torch.float32, device=device)
+    
+    return mesh_points
+
+def get_mesh_capsule_corner_samples(mesh_bounds, device):
+    """
+    Generate 2 sample points along the longest axis of the mesh AABB,
+    mimicking a capsule approximation.
+    Reduces points from 8 (corners) to 2.
+    """
+    min_xyz = mesh_bounds[0]
+    max_xyz = mesh_bounds[1]
+    
+    # Calculate dimensions and center
+    dims = max_xyz - min_xyz
+    center = (min_xyz + max_xyz) / 2.0
+    
+    # Find the longest axis
+    longest_axis_idx = np.argmax(dims)
+    half_length = dims[longest_axis_idx] / 2.0
+    
+    # Generate 2 points along the longest axis
+    # We step back slightly from the edge (e.g. 0.8 * half_length) to be safe/conservative
+    # similar to how capsule points are usually internal
+    offset_val = half_length * 0.8
+    
+    p1 = center.copy()
+    p2 = center.copy()
+    
+    p1[longest_axis_idx] += offset_val
+    p2[longest_axis_idx] -= offset_val
+    
+    mesh_points = torch.tensor([p1, p2], dtype=torch.float32, device=device)
+    
+    return mesh_points
+
 def get_char_point_samples(char_model: kin_char_model.KinCharModel,
                            sphere_num_subdivisions = 0,
                            box_num_slices = 2,
@@ -922,8 +973,44 @@ def get_minimal_char_point_samples(char_model: kin_char_model.KinCharModel):
                                                            dim_y=2)
                 box_points = box_points + offset
                 curr_body_points.append(box_points)
+            elif geom._shape_type == kin_char_model.GeomType.MESH:
+                mesh_name = geom._mesh_name
+                if mesh_name is not None:
+                    # Access the raw trimesh object to get bounds
+                    if hasattr(char_model, "_meshes") and mesh_name in char_model._meshes:
+                        mesh = char_model._meshes[mesh_name]
+                        # Use helper to get 2 points along major axis (Capsule approximation)
+                        # mesh_points = get_mesh_aabb_corner_samples(mesh.bounds, device)
+                        mesh_points = get_mesh_capsule_corner_samples(mesh.bounds, device)
+                        
+                        # Apply geom local rotation if present
+                        if geom._quat is not None:
+                            # geom._quat might be list, numpy or tensor. Ensure it's a tensor on device
+                            if isinstance(geom._quat, torch.Tensor):
+                                quat = geom._quat.to(device=device, dtype=torch.float32)
+                            else:
+                                quat = torch.tensor(geom._quat, dtype=torch.float32, device=device)
+                            
+                            mesh_points = torch_util.quat_rotate(quat.unsqueeze(0), mesh_points)
+                            
+                        # Apply geom local offset
+                        mesh_points = mesh_points + geom._offset
+                        curr_body_points.append(mesh_points)
+                    else:
+                        # Mesh not found, use offset
+                        curr_body_points.append(geom._offset.clone().unsqueeze(0))
+                else:
+                    curr_body_points.append(geom._offset.clone().unsqueeze(0))
+            
+            elif geom._shape_type == kin_char_model.GeomType.CYLINDER:
+                # TODO
+                curr_body_points.append(geom._offset.clone().unsqueeze(0))
             else:
-                assert False
+                assert False, "Unsupported geometry type: {:s}".format(geom._shape_type)
+
+        if len(curr_body_points) == 0:
+            zero_point = torch.zeros(size=[1, 3], dtype=torch.float32, device=device)
+            curr_body_points.append(zero_point)
 
         curr_body_points = torch.cat(curr_body_points, dim=0)
         total_num_points += curr_body_points.shape[0]
