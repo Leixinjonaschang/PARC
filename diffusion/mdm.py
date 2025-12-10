@@ -989,37 +989,36 @@ class MDM(MotionGenerator):
         return corrupted_sample
     
     def compute_point_hf_sdf(self, body_pos, body_rot, body_points, hfs, base_z = -10.0):
-        # TODO: split this up across frames, each frame only look at local 10x10 grid
-        # to save memory?
+        # Memory-efficient version: compute SDF per body to avoid huge tensor broadcasts
+        # For complex robots like G1 with many bodies/meshes, computing all points at once
+        # creates tensors of shape (B, N*seq_len, M, 3) which can exceed GPU memory.
 
         # hfs are always in the character's local frame
 
         # body_pos: (batch_size, seq_len, num_bodies, 3)
         # body_rot: (batch_size, seq_len, num_bodies, 4)
-        # body_points: (num_bodies, num_points(b), 3)
+        # body_points: list of (num_points(b), 3) tensors, one per body
         # hfs: (batch_size, seq_len, dim_x, dim_y)
 
         # 1. apply body transformations to body_points
         # 2. get points in coord frame of hf (they already will be, no need)
-        #       - apply root heading inverse
-        #       - translate by mid point of hfs (which is (0, 0) so no need)
-        # 3. call point hf sdf function to get sdfs
+        # 3. call point hf sdf function to get sdfs (per body to save memory)
         # 4. loss is sum of squares of negative sdfs
         batch_size = body_pos.shape[0]
-        #canon_pos_xy = body_pos[..., 0:1, 0:2]
-        #body_pos = body_pos.clone()
-        #body_pos[..., 0:2] -= canon_pos_xy
-
-        #canon_heading_quat_inv = torch_util.calc_heading_quat_inv(body_rot[..., 0:1, :])
-        #body_pos = torch_util.quat_rotate(canon_heading_quat_inv, body_pos)
-        #body_rot = torch_util.quat_multiply(canon_heading_quat_inv, body_rot)
 
         num_bodies = self._kin_char_model.get_num_joints()
         assert num_bodies == len(body_points)
 
-        # NOTE: an alternative to cat is to pass body points as shape: (num_points, 3),
-        # and keeping track of the slices for each body
-        localized_points = []
+        # Precompute hf parameters once
+        negative_dims = torch.tensor([self._num_x_neg, self._num_y_neg], dtype=torch.float32, device=self._device)
+        min_box_center = -self._dxdy * negative_dims
+        min_box_center = min_box_center.unsqueeze(0).expand(batch_size, 2)
+        hfs_squeezed = hfs.squeeze(1)
+
+        # Compute SDF per body to avoid memory explosion
+        # Instead of concatenating all points then computing SDF once,
+        # we compute SDF for each body separately and collect results
+        all_sdfs = []
         for b in range(num_bodies):
             # unsqueeze sequence dimension and batch dimension
             curr_body_points = body_points[b].unsqueeze(0).unsqueeze(0) # shape: (1, 1, num_points(b), 3)
@@ -1029,16 +1028,17 @@ class MDM(MotionGenerator):
             curr_body_points = torch_util.quat_rotate(body_rot_unsq, curr_body_points) + body_pos_unsq
             # shape: (batch_size, seq_len, num_points(b), 3)
 
-            # append flattened points across seq_len and num_points dims
-            localized_points.append(curr_body_points.view(batch_size, -1, 3))
-        localized_points = torch.cat(localized_points, dim=1) # shape: (batch_size, num points, 3)
-
-        # TODO: ensure base_z input is much lower than lowest point
-        negative_dims = torch.tensor([self._num_x_neg, self._num_y_neg], dtype=torch.float32, device=self._device)
-        min_box_center = -self._dxdy * negative_dims
-        min_box_center = min_box_center.unsqueeze(0).expand(batch_size, 2)
-        sdf = terrain_util.points_hf_sdf(localized_points, hfs.squeeze(1), min_box_center, self._dxdy, base_z = base_z)
-        return sdf # shape: [batch_size, num_points]
+            # flatten across seq_len and num_points dims for this body
+            curr_localized_points = curr_body_points.view(batch_size, -1, 3)
+            
+            # Compute SDF for this body's points only
+            curr_sdf = terrain_util.points_hf_sdf(curr_localized_points, hfs_squeezed, 
+                                                   min_box_center, self._dxdy, base_z=base_z)
+            all_sdfs.append(curr_sdf)
+        
+        # Concatenate SDFs from all bodies
+        sdf = torch.cat(all_sdfs, dim=1) # shape: [batch_size, total_num_points]
+        return sdf
     
     
     
