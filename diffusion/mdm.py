@@ -303,8 +303,21 @@ class MDM(MotionGenerator):
 
         self._predict_mode = PredictMode[cfg["predict_mode"]]
 
-        self._left_foot_id = self._kin_char_model.get_body_id("left_foot")
-        self._right_foot_id = self._kin_char_model.get_body_id("right_foot")
+        self._left_foot_id = None
+        for name in ["left_foot", "left_ankle_roll_link"]:
+            try:
+                self._left_foot_id = self._kin_char_model.get_body_id(name)
+                break
+            except:
+                continue
+        
+        self._right_foot_id = None
+        for name in ["right_foot", "right_ankle_roll_link"]:
+            try:
+                self._right_foot_id = self._kin_char_model.get_body_id(name)
+                break
+            except:
+                continue
 
         if self._use_hf_collision_loss:
             self.init_char_point_samples()
