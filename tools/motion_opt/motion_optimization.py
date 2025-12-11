@@ -428,8 +428,10 @@ def motion_contact_optimization(src_frames: torch.Tensor,
     src_root_pos = src_frames[:, 0:3]
     src_root_rot = src_frames[:, 3:6]
     src_root_rot_quat = torch_util.exp_map_to_quat(src_root_rot)
-    src_joint_dof = src_frames[:, 6:34]
-    src_joint_rot = char_model.dof_to_rot(src_frames[:, 6:34])
+    # TODO: commit this if the test is successful
+    dof_size = char_model.get_dof_size()
+    src_joint_dof = src_frames[:, 6:6+dof_size]
+    src_joint_rot = char_model.dof_to_rot(src_joint_dof)
 
     src_body_pos, src_body_rot = char_model.forward_kinematics(src_root_pos, src_root_rot_quat, src_joint_rot)
     src_body_vels = src_body_pos[1:] - src_body_pos[:-1]
