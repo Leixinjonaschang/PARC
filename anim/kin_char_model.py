@@ -584,11 +584,31 @@ class KinCharModel():
         return self._body_names[body_id]
     
     def get_body_id(self, body_name):
-        assert body_name in self._name_body_map
-        return self._name_body_map[body_name]
+        if body_name in self._name_body_map:
+            return self._name_body_map[body_name]
+
+        # Fallback aliases for common foot naming differences across character models
+        alias_candidates = {
+            "left_foot": [
+                "left_foot",
+                "left_ankle_roll_link",
+            ],
+            "right_foot": [
+                "right_foot",
+                "right_ankle_roll_link",
+            ],
+        }
+
+        if body_name in alias_candidates:
+            for alt_name in alias_candidates[body_name]:
+                if alt_name in self._name_body_map:
+                    return self._name_body_map[alt_name]
+
+        assert False, f"Body name '{body_name}' not found in model. Available: {list(self._name_body_map.keys())}"
     
     def get_joint_id(self, body_name):
-        assert body_name in self._name_body_map
+        if body_name not in self._name_body_map:
+            return self.get_body_id(body_name) - 1
         return self._name_body_map[body_name] -1 # joint arrays exclude the root
     
     def _build_name_body_map(self):
