@@ -51,6 +51,14 @@ def train_mdm(config, input_mdm=None):
             if "device" in config:
                 diffusion_model.set_device(config["device"])
             diffusion_model._use_wandb = use_wandb
+
+            # Allow overriding training parameters from the new config
+            if "epochs" in config:
+                print(f"Overriding epochs: {diffusion_model._epochs} -> {config['epochs']}")
+                diffusion_model._epochs = config["epochs"]
+            if "batch_size" in config:
+                print(f"Overriding batch_size: {diffusion_model._batch_size} -> {config['batch_size']}")
+                diffusion_model._batch_size = config["batch_size"]
         else:
             diffusion_model = MDM(cfg=config)
     else:
