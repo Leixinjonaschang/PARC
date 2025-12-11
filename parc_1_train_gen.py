@@ -29,7 +29,12 @@ def train_mdm(config, input_mdm=None):
     if sampler_file_path.is_file():
         print("loading sampler: ", sampler_file_path)
         motion_sampler = pickle.load(sampler_file_path.open("rb"))
-        motion_sampler.update_old_sampler()
+        motion_sampler.update_old_sampler(config)
+        # If device still mismatched, rebuild sampler to guarantee correct device
+        if str(motion_sampler._device) != str(config["device"]):
+            print(f"Rebuilding sampler on device {config['device']} to match config")
+            motion_sampler = MDMHeightfieldContactMotionSampler(cfg=config)
+            sampler_file_path.write_bytes(pickle.dumps(motion_sampler))
     else:
         motion_sampler = MDMHeightfieldContactMotionSampler(cfg=config)
         sampler_file_path.write_bytes(pickle.dumps(motion_sampler))
@@ -40,7 +45,11 @@ def train_mdm(config, input_mdm=None):
         if "input_model_path" in config:
             input_model_path = Path(config["input_model_path"])
             diffusion_model = pickle.load(input_model_path.open("rb"))
-            diffusion_model.update_old_mdm()
+            # Pass the new config to update_old_mdm so it can handle device updates
+            diffusion_model.update_old_mdm(config)
+            # Extra guard: ensure device matches config even if checkpoint device differs
+            if "device" in config:
+                diffusion_model.set_device(config["device"])
             diffusion_model._use_wandb = use_wandb
         else:
             diffusion_model = MDM(cfg=config)

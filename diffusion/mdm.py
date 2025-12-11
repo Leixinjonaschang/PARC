@@ -439,6 +439,10 @@ class MDM(MotionGenerator):
                 raise NameError(comp_name) 
         mdm_features = torch.cat(mdm_feature_list, dim=-1)
 
+        # Ensure features are on the model device (handles samplers loaded on another GPU)
+        if mdm_features.device != self._device:
+            mdm_features = mdm_features.to(self._device)
+
         if standardize:
             mdm_features = self.standardize_features(mdm_features)
 
@@ -618,13 +622,64 @@ class MDM(MotionGenerator):
 
         return conds, motion_features
 
-    def update_old_mdm(self):
-        # will use this function to make old trained models usable
+    def set_device(self, new_device):
+        """Move all relevant state to a new device."""
+        if str(self._device) == str(new_device):
+            return
+        old_device = self._device
+        self._device = new_device
+
+        # Move modules
+        self._denoise_model = self._denoise_model.to(self._device)
+        if hasattr(self, "_ema_denoise_model"):
+            self._ema_denoise_model = self._ema_denoise_model.to(self._device)
+
+        # Move optimizer state
+        if hasattr(self, "_optimizer"):
+            for state in self._optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.to(self._device)
+
+        # Move cached tensors
+        if hasattr(self, "_dxdy"):
+            self._dxdy = self._dxdy.to(self._device)
+        if hasattr(self, "_min_point"):
+            self._min_point = self._min_point.to(self._device)
+        if hasattr(self, "_mdm_features_mean"):
+            self._mdm_features_mean = self._mdm_features_mean.to(self._device)
+        if hasattr(self, "_mdm_features_std"):
+            self._mdm_features_std = self._mdm_features_std.to(self._device)
+
+        # Rebuild device-dependent components
+        self._kin_char_model = kin_char_model.KinCharModel(self._device)
+        self._kin_char_model.load_char_file(self._cfg['char_file'])
+        if hasattr(self, "_rot_changer"):
+            self._rot_changer = rot_changer.RotChanger(self._rot_changer.rot_type, self._kin_char_model)
+        else:
+            features_cfg = self._cfg["features"]
+            rot_type = rot_changer.RotationType[features_cfg["rot_type"]]
+            self._rot_changer = rot_changer.RotChanger(rot_type, self._kin_char_model)
+
+        self._diffusion_rates = diffusion_util.DiffusionRates(self._diffusion_timesteps, self._device)
+
+        # Re-init char point samples on new device
+        if self._use_hf_collision_loss:
+            self.init_char_point_samples()
+
+        print(f"MDM device moved from {old_device} to {self._device}")
+        return
+
+    def update_old_mdm(self, new_cfg=None):
+        # compatibility hook for old checkpoints
+        if new_cfg is not None and "device" in new_cfg:
+            self.set_device(new_cfg["device"])
         return
     
     def init_char_point_samples(self):
         char_point_samples = geom_util.get_minimal_char_point_samples(self._kin_char_model)
-        self._char_point_samples = char_point_samples
+        # store on model device
+        self._char_point_samples = [p.to(self._device) for p in char_point_samples]
         return
 
     def motion_difference(self, true_motion_data, pred_motion_data, conds, loss_fn):
@@ -1021,7 +1076,10 @@ class MDM(MotionGenerator):
         all_sdfs = []
         for b in range(num_bodies):
             # unsqueeze sequence dimension and batch dimension
-            curr_body_points = body_points[b].unsqueeze(0).unsqueeze(0) # shape: (1, 1, num_points(b), 3)
+            curr_body_points = body_points[b]
+            if curr_body_points.device != self._device:
+                curr_body_points = curr_body_points.to(self._device)
+            curr_body_points = curr_body_points.unsqueeze(0).unsqueeze(0) # shape: (1, 1, num_points(b), 3)
 
             body_rot_unsq = body_rot[..., b, :].unsqueeze(2) # shape: (batch_size, seq_len, 1, 4)
             body_pos_unsq = body_pos[..., b, :].unsqueeze(2) # shape: (batch_size, seq_len, 1, 3)
