@@ -160,12 +160,19 @@ def mdm_procgen(config, input_mdm_model = None):
 
     only_gen = config["only_gen"]
 
+    # Get device for MDM model generation (from config or use default)
+    mdm_device = config.get("device", cuda_device)
+    print(f"Using device for MDM generation: {mdm_device}")
+
     # We can also try using mdm models from different arbitrary checkpoints
     if input_mdm_model is None:
         mdm_model_path = Path(config["mdm_model_path"])
         mdm_model = load_mdm(mdm_model_path)
     else:
         mdm_model = input_mdm_model
+    # Move MDM model to specified device if needed
+    if mdm_model is not None and str(mdm_model._device) != str(mdm_device):
+        mdm_model.set_device(mdm_device)
 
     char_model = mdm_model._kin_char_model.get_copy(cpu_device)
 
