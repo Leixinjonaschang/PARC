@@ -399,9 +399,13 @@ def exp_map_to_axis_angle(exp_map):
     min_theta = 1e-5
 
     angle = torch.norm(exp_map, dim=-1)
-    angle_exp = torch.unsqueeze(angle, dim=-1)
-    axis = exp_map / angle_exp
     angle = normalize_angle(angle)
+    
+    # Clamp angle before division to prevent Inf/NaN when angle is very small
+    # This is critical to prevent hanging in TorchScript when model produces near-zero exp_map
+    angle_exp = torch.unsqueeze(angle, dim=-1)
+    safe_angle_exp = angle_exp.clamp(min=min_theta)
+    axis = exp_map / safe_angle_exp
 
     default_axis = torch.zeros_like(exp_map)
     default_axis[..., -1] = 1
