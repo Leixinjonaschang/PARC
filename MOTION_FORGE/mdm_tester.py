@@ -262,20 +262,28 @@ def main_loop():
 
     if psim.Button("Sample motions"):
         padding = 4.0
-        motion_samples, hf, future_pos, future_rot = g_sampler.sample_motion_data(
-            ret_future_pos=True,
-            ret_future_rot=True,
-            ret_contacts=True,
-            ret_floor_heights=True,
-            num_samples=g_batch_size)
+        # call the new API to sample motions
+        motion_data, hf, target_info = g_sampler.sample_motion_data(
+            num_samples=g_batch_size,
+            ret_hf_obs=True,
+            ret_target_info=True)
         
-        x0 = motion_samples
+        # construct motion_samples from motion_data dictionary
+        motion_samples, contacts = get_mlib_format(motion_data)
+        
+        # get future_pos and future_rot from target_info
+        future_pos = target_info.future_pos
+        future_rot = target_info.future_rot
+        
+        # concatenate contacts to motion_samples to build complete x0
+        num_contact_dims = g_mdm._kin_char_model.get_num_joints()
+        contacts_selected = contacts[..., :num_contact_dims] 
+        x0 = torch.cat([motion_samples, contacts_selected], dim=-1)
 
-        ## Unnormalize
-        x0[..., :g_sampler.get_num_dof()] *= g_sampler._dof_high
-
+        num_dof = motion_samples.shape[-1]
+        
         ## Unnormalize hf as well
-        hf *= g_sampler._max_h
+        # hf *= g_sampler._max_h
 
         dx = g_sampler._dx
         min_x = -g_sampler._num_x_neg * dx
@@ -292,7 +300,7 @@ def main_loop():
             build_ps_hf_mesh(hf[i], min_x + x_offset, min_y + y_offset, dx, "hf" + str(i).zfill(3))
             
 
-            x0_motion = x0[i, :, :g_sampler.get_num_dof()].unsqueeze(0)
+            x0_motion = x0[i, :, :num_dof].unsqueeze(0)
             x0_motion[..., 0] += x_offset
             x0_motion[..., 1] += y_offset
             x0_contacts = x0[i, :, 34:49].unsqueeze(0)
