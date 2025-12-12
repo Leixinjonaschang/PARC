@@ -46,12 +46,40 @@ sampler_file_path = "../Data/samplers/mdm_batch_05_dm.pkl"
 input_mdm_path = "../tests/train_mdm/parkour_dataset_v_21_test01/checkpoints/model_7500.pkl"
 
 def load_mdm(mdm_path) -> mdm.MDM:
-    with open(mdm_path, 'rb') as input_filestream:
-        ret_mdm = pickle.load(input_filestream)
+    # Detect available device
+    if torch.cuda.is_available():
+        target_device = "cuda:0"
+    else:
+        target_device = "cpu"
+    
+    # Temporarily modify torch's default device restore function for device mapping
+    import torch.serialization as serialization
+    original_restore_location = serialization.default_restore_location
+    
+    def device_mapping_restore_location(storage, location):
+        # Map all CUDA devices to the target device
+        if isinstance(location, str):
+            if location.startswith('cuda'):
+                location = target_device
+        return original_restore_location(storage, location)
+    
+    # Temporarily replace the restore_location function
+    serialization.default_restore_location = device_mapping_restore_location
+    
+    try:
+        with open(mdm_path, 'rb') as input_filestream:
+            ret_mdm = pickle.load(input_filestream)
+        
         ret_mdm.update_old_mdm()
+        
+        # Use MDM's set_device method to ensure all states are moved to the target device
+        ret_mdm.set_device(target_device)
 
         print("MDM uses heightmap: ", ret_mdm._use_heightmap_obs)
         print("MDM uses target: ", ret_mdm._use_target_obs)
+    finally:
+        # Restore the original restore_location function
+        serialization.default_restore_location = original_restore_location
     return ret_mdm
 
 g_mdm = load_mdm(input_mdm_path)
@@ -70,8 +98,54 @@ def load_mdm_sampler(sampler_config_path) ->  MDMHeightfieldContactMotionSampler
     return motion_sampler
 
 def load_mdm_sampler_pkl(sampler_path) -> MDMHeightfieldContactMotionSampler:
-    with open(sampler_path, "rb") as stream:
-        motion_sampler = pickle.load(stream)
+    # Detect available device
+    if torch.cuda.is_available():
+        target_device = "cuda:0"
+    else:
+        target_device = "cpu"
+    
+    # Temporarily modify torch's default restore_location function for device mapping
+    import torch.serialization as serialization
+    original_restore_location = serialization.default_restore_location
+    
+    def device_mapping_restore_location(storage, location):
+        # Map all CUDA devices to the target device
+        if isinstance(location, str):
+            if location.startswith('cuda'):
+                location = target_device
+        return original_restore_location(storage, location)
+    
+    # Temporarily replace restore_location function
+    serialization.default_restore_location = device_mapping_restore_location
+    
+    try:
+        with open(sampler_path, "rb") as stream:
+            motion_sampler = pickle.load(stream)
+        
+        # Update device attributes
+        if hasattr(motion_sampler, '_device'):
+            old_device = motion_sampler._device
+            motion_sampler._device = target_device
+            
+            # Move device-related tensors and modules
+            if hasattr(motion_sampler, '_motion_times') and isinstance(motion_sampler._motion_times, torch.Tensor):
+                motion_sampler._motion_times = motion_sampler._motion_times.to(target_device)
+            
+            # Move kin_char_model
+            if hasattr(motion_sampler, '_kin_char_model'):
+                motion_sampler._kin_char_model._device = target_device
+            
+            # Move motion_lib
+            if hasattr(motion_sampler, '_mlib'):
+                motion_sampler._mlib._device = target_device
+                if hasattr(motion_sampler._mlib, '_motion_frames') and isinstance(motion_sampler._mlib._motion_frames, torch.Tensor):
+                    motion_sampler._mlib._motion_frames = motion_sampler._mlib._motion_frames.to(target_device)
+            
+            print(f"Sampler device moved from {old_device} to {target_device}")
+    finally:
+        # Restore the original restore_location function
+        serialization.default_restore_location = original_restore_location
+    
     return motion_sampler
 
 if os.path.exists(sampler_file_path):
