@@ -1,7 +1,12 @@
 import sys
-sys.path.insert(1, sys.path[0] + ("/../.."))
-
 import os
+
+# Setup the path to the PARC directory
+script_dir = os.path.dirname(os.path.abspath(__file__))
+parc_dir = os.path.dirname(script_dir)  
+if parc_dir not in sys.path:
+    sys.path.insert(1, parc_dir)
+
 import polyscope as ps
 import polyscope.imgui as psim
 import trimesh
