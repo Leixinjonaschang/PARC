@@ -11,8 +11,7 @@ dx: 0.4
 dy: 0.4
 
 procgen_mode: "FILE" # [BOXES, PATHS, STAIRS, FILE]
-input_terrain_path: "../Data/parkour_dataset/for_paper/teaser_terrain.pkl"
-#input_terrain_path: "../Data/parkour_dataset/gen_test_terrains/terrains.yaml"
+input_terrain_path: "data/terrains/TEASER_TERRAIN.pkl"
 use_opt: True
 remove_hesitation: True
 simplify_terrain: True
