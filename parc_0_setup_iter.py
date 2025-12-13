@@ -69,6 +69,7 @@ dataset_config = yaml.safe_load(input_create_dataset_config_path.read_text())
 print("********** CREATING PARC 1 TRAIN GEN CONFIGS **********")
 mdm_config = yaml.safe_load(input_mdm_config_path.open("r"))
 mdm_config["motion_lib_file"] = str(iter_start_dataset_path)
+mdm_config["char_file"] = str(input_char_file)
 if input_model_path is not None:
     mdm_config["input_model_path"] = str(input_model_path)
 else:
@@ -111,6 +112,7 @@ for i in range(kin_gen_num_batches_of_motions):
     mdm_procgen_config["output_dir"] = raw_kin_gen_output_dir
     mdm_procgen_config["opt"]["output_dir"] = opt_kin_gen_output_dir
     mdm_procgen_config["opt"]["use_wandb"] = False
+    mdm_procgen_config["opt"]["char_model"] = str(input_char_file)
 
     mdm_procgen_config["motion_id_offset"] = curr_motion_id_offset
     mdm_procgen_config["num_new_motions"] = kin_gen_num_motions_per_batch
@@ -126,6 +128,21 @@ for i in range(kin_gen_num_batches_of_motions):
 
 print("********** CREATING PARC 3 TRACKER CONFIGS **********")
 tracker_config = yaml.safe_load(input_tracker_config_path.open('r'))
+
+# Setup tracker env config with correct char file
+tracker_env_config_path = Path(tracker_config["env_config"])
+if not tracker_env_config_path.exists():
+    tracker_env_config_path = Path("PARC") / tracker_env_config_path
+if tracker_env_config_path.exists():
+    env_config = yaml.safe_load(tracker_env_config_path.read_text())
+    env_config["env"]["char_file"] = str(input_char_file)
+    output_env_config_path = output_tracker_dir / "dm_env.yaml"
+    os.makedirs(output_tracker_dir, exist_ok=True)
+    output_env_config_path.write_text(yaml.dump(env_config))
+    tracker_config["env_config"] = str(output_env_config_path)
+else:
+    print(f"Warning: Could not find env config at {tracker_env_config_path}")
+
 if input_tracker_model_path is not None:
     tracker_config["in_model_file"] = str(input_tracker_model_path)
 else:
