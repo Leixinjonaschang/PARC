@@ -47,7 +47,10 @@ if __name__ == "__main__":
     os.makedirs(output_folder, exist_ok=True)
 
     with open(config["input_terrains"], "r") as f:
-        terrain_files = yaml.safe_load(f)["terrains"]
+        terrain_data = yaml.safe_load(f)
+        terrain_files = terrain_data["terrains"]
+        if isinstance(terrain_files, str):
+            terrain_files = [terrain_files]
 
     mdm_path_settings = mdm_path.MDMPathSettings()
     mdm_path_config = config["mdm_path"]
