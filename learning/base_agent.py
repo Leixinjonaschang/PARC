@@ -200,12 +200,12 @@ class BaseAgent(torch.nn.Module):
             a_mean = torch.tensor(0.5 * (a_space.high + a_space.low), device=self._device, dtype=a_dtype)
             a_std = torch.tensor(0.5 * (a_space.high - a_space.low), device=self._device, dtype=a_dtype)
             a_norm = normalizer.Normalizer(a_mean.shape, device=self._device, init_mean=a_mean, 
-                                                 init_std=a_std, dtype=a_dtype)
+                                                 init_std=a_std, min_std=1e-4, dtype=a_dtype)
         elif (isinstance(a_space, gym.spaces.Discrete)):
             a_mean = torch.tensor([0], device=self._device, dtype=a_dtype)
             a_std = torch.tensor([1], device=self._device, dtype=a_dtype)
             a_norm = normalizer.Normalizer(a_mean.shape, device=self._device, init_mean=a_mean, 
-                                                 init_std=a_std, min_std=0, dtype=a_dtype)
+                                                 init_std=a_std, min_std=1e-4, dtype=a_dtype)
         else:
             assert(False), "Unsuppoted action space: {}".format(a_space)
         return a_norm
