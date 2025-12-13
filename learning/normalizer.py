@@ -8,6 +8,7 @@ class Normalizer(torch.nn.Module):
     def __init__(self, shape, device, init_mean=None, init_std=None, min_std=1e-4, clip=np.inf, dtype=torch.float, non_norm_indices=None):
         super().__init__()
         
+        self._min_std = min_std  # save min_std value for initialization protection
         self._min_var = min_std * min_std
         self._clip = clip
         self.dtype = dtype
@@ -114,7 +115,9 @@ class Normalizer(torch.nn.Module):
         if init_std is not None:
             assert init_std.shape == shape, \
             Logger.print('Normalizer init std shape mismatch, expecting {:d}, but got {:d}'.format(shape, init_std.shape))
-            self._std[:] = init_std
+            # Apply min_std protection to prevent std from being zero at initialization, which would cause division by zero later
+            min_std_val = self._min_std if hasattr(self, '_min_std') else 1e-4
+            self._std[:] = torch.clamp(init_std, min=min_std_val)
 
         self._mean_sq = None
         
