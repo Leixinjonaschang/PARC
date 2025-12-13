@@ -274,9 +274,36 @@ class IGCharEnv(ig_env.IGEnv):
         char_handle = self._get_char_actor_handle()
         body_ids = []
 
+        # Body name mappings for different robot models
+        # Maps standard names -> robot-specific names
+        body_name_mappings = {
+            "left_foot": ["left_foot", "left_ankle_roll_link"],
+            "right_foot": ["right_foot", "right_ankle_roll_link"],
+            "left_hand": ["left_hand", "left_wrist_yaw_link", "left_rubber_hand"],
+            "right_hand": ["right_hand", "right_wrist_yaw_link", "right_rubber_hand"],
+        }
+
+        # Get all available body names for better error messages
+        available_body_names = self._gym.get_actor_rigid_body_names(env_ptr, char_handle)
+
         for body_name in body_names:
             body_id = self._gym.find_actor_rigid_body_handle(env_ptr, char_handle, body_name)
-            assert(body_id != -1)
+            
+            # If not found, try mapped names
+            if body_id == -1 and body_name in body_name_mappings:
+                for alt_name in body_name_mappings[body_name]:
+                    body_id = self._gym.find_actor_rigid_body_handle(env_ptr, char_handle, alt_name)
+                    if body_id != -1:
+                        break
+            
+            # If still not found, raise error with helpful message
+            if body_id == -1:
+                error_msg = f"Body name '{body_name}' not found in robot model.\n"
+                error_msg += f"Available body names: {list(available_body_names)}\n"
+                if body_name in body_name_mappings:
+                    error_msg += f"Tried mappings: {body_name_mappings[body_name]}"
+                raise AssertionError(error_msg)
+            
             body_ids.append(body_id)
 
         body_ids = torch.tensor(body_ids, device=self._device, dtype=torch.long)
