@@ -1,0 +1,35 @@
+action_bound_weight: 10.0
+action_entropy_weight: 0.0
+action_reg_weight: 0.0
+agent_name: DM_PPO
+batch_size: 4
+clip_grad_norm: true
+critic_loss_type: L2
+critic_loss_weight: 10.0
+debug_log: output/debug_log.txt
+discount: 0.99
+exp_name: parkour_g1_dataset_exp001
+iters_per_checkpoint: 200
+iters_per_output: 100
+max_grad_norm: 1000.0
+model:
+  action_std: 0.05
+  actor_init_output_scale: 0.01
+  actor_net: fc_3layers_2048units
+  actor_std_type: FIXED
+  critic_net: fc_3layers_2048units
+norm_adv_clip: 4.0
+norm_obs_clip: 10.0
+normalizer_samples: 300000000
+optimizer:
+  learning_rate: 5e-5
+  momentum: 0.9
+  type: SGD
+  weight_decay: 0.0
+ppo_clip_ratio: 0.2
+project_name: parkour_g1
+steps_per_iter: 32
+td_lambda: 0.95
+test_episodes: 16
+update_epochs: 5
+use_wandb: true

@@ -1,0 +1,212 @@
+env:
+  fixed_camera_id: 0 # Uncomment to force lock camera to specific env
+  camera_mode: still
+  char_file: data/assets/unitree_g1/g1_mocap_29dof.xml
+  contact_bodies: []
+  contact_detection_eps: 1.0e-05
+  # contact_weights: 每个 body 的接触权重，需要与 body 数量匹配（g1: 36个body）
+  # Body 顺序: 0:pelvis, 1-7:left_leg(7), 8:pelvis_contour, 9-15:right_leg(7), 16-18:waist(3), 19-21:head(3), 22-28:left_arm(7), 29-35:right_arm(7)
+  contact_weights: [5.0,  # 0: pelvis
+                    5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,  # 1-7: left leg (left_hip_pitch, left_hip_roll, left_hip_yaw, left_knee, left_ankle_pitch, left_ankle_roll, left_toe)
+                    5.0,  # 8: pelvis_contour
+                    5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,  # 9-15: right leg (right_hip_pitch, right_hip_roll, right_hip_yaw, right_knee, right_ankle_pitch, right_ankle_roll, right_toe)
+                    5.0, 5.0, 5.0,  # 16-18: waist (waist_yaw, waist_roll, torso)
+                    5.0, 5.0, 5.0,  # 19-21: head (head_link, head_mocap, imu_in_torso)
+                    5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,  # 22-28: left arm (left_shoulder_pitch, left_shoulder_roll, left_shoulder_yaw, left_elbow, left_wrist_roll, left_wrist_pitch, left_wrist_yaw)
+                    5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]  # 29-35: right arm (right_shoulder_pitch, right_shoulder_roll, right_shoulder_yaw, right_elbow, right_wrist_roll, right_wrist_pitch, right_wrist_yaw)
+  control_freq: 30
+  control_mode: pd
+  debug_visuals: false
+  demo_mode: false
+  dm:
+    fail_rate_quantiles:
+    - 0.25
+    - 0.5
+    - 0.75
+    - 0.9
+    - 0.95
+    - 0.99
+    heightmap:
+      horizontal_scale: 0.4
+      padding: 0.4
+    min_motion_weight: 0.01
+    has_motion_classes: false
+    motion_classes:
+    - climbing
+    - jumping
+    - mid_climbing
+    - misc_mdm
+    - platform
+    - running
+    - stairs
+    - vaulting
+    - mdm_batch_05
+    motion_file: ../tests/parc/april272025/kin_gen/iter_2_opt/motions.yaml
+    target_xy_future_time_max: 5.0
+    target_xy_future_time_min: 1.0
+    terrain_build_mode: square
+    terrain_save_path: output/parc/terrain.pkl
+    terrains_per_motion: 1
+  enable_early_termination: true
+  enable_replan_timer_obs: true
+  env_spacing: 2.0
+  env_style: square
+  episode_length: 10.0
+  fraction_dm_envs: 1.0
+  global_obs: false
+  global_root_height_obs: false
+  has_target_xy_obs: false
+  init_pose: [0, 0, 0.882416, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0]
+
+  # copied from mimickit g1 deepmimic env
+  joint_err_w: 
+   - 1.0 # left_hip_pitch_link
+   - 1.0 # left_hip_roll_link
+   - 1.0 # left_hip_yaw_link
+   - 0.6 # left_knee_link
+   - 0.5 # left_ankle_pitch_link
+   - 0.5 # left_ankle_roll_link
+   - 0.0 # left_toe_link (not standard)
+   - 0.0 # pelvis_contour_link (not standard)
+   - 1.0 # right_hip_pitch_link
+   - 1.0 # right_hip_roll_link
+   - 1.0 # right_hip_yaw_link
+   - 0.6 # right_knee_link
+   - 0.5 # right_ankle_pitch_link
+   - 0.5 # right_ankle_roll_link
+   - 0.0 # right_toe_link (not standard)
+   - 1.0 # waist_yaw_link
+   - 1.0 # waist_roll_link
+   - 1.0 # torso_link
+   - 0.0 # head_link (not standard)
+   - 0.0 # head_mocap (not standard)
+   - 0.0 # imu_in_torso (not standard)
+   - 1.0 # left_shoulder_pitch_link
+   - 1.0 # left_shoulder_roll_link
+   - 1.0 # left_shoulder_yaw_link
+   - 0.6 # left_elbow_link
+   - 0.5 # left_wrist_roll_link
+   - 0.5 # left_wrist_pitch_link
+   - 0.5 # left_wrist_yaw_link
+   - 1.0 # right_shoulder_pitch_link
+   - 1.0 # right_shoulder_roll_link
+   - 1.0 # right_shoulder_yaw_link
+   - 0.6 # right_elbow_link
+   - 0.5 # right_wrist_roll_link
+   - 0.5 # right_wrist_pitch_link
+   - 0.5 # right_wrist_yaw_link
+
+
+  key_bodies: ["left_ankle_roll_link", "right_ankle_roll_link", "head_link", "left_wrist_yaw_link", "right_wrist_yaw_link"]
+
+  key_pos_w: 0.15
+  max_obs_h: 3.0
+  mgdm:
+    empty: 0
+  min_obs_h: -3.0
+  plane:
+    dynamic_friction: 1.0
+    restitution: 0.0
+    static_friction: 1.0
+  pose_termination: true
+  pose_termination_dist:
+  # Left leg (body indices 1-7 after excluding pelvis)
+  - 1.0  # left_hip_pitch_link
+  - 1.0  # left_hip_roll_link
+  - 1.0  # left_hip_yaw_link
+  - 1.0  # left_knee_link
+  - 10.0  # left_ankle_pitch_link
+  - 10.0  # left_ankle_roll_link
+  - 10.0 # left_toe_link (foot end, very lenient)
+  # Pelvis contour (body index 8)
+  - 10.0  # pelvis_contour_link
+  # Right leg (body indices 9-15)
+  - 1.0  # right_hip_pitch_link
+  - 1.0  # right_hip_roll_link
+  - 1.0  # right_hip_yaw_link
+  - 1.0  # right_knee_link
+  - 10.0  # right_ankle_pitch_link
+  - 10.0  # right_ankle_roll_link
+  - 10.0 # right_toe_link (foot end, very lenient)
+  # Waist (body indices 16-18)
+  - 1.0  # waist_yaw_link
+  - 1.0  # waist_roll_link
+  - 1.0  # torso_link
+  # Head (body indices 19-21)
+  - 1.0  # head_link
+  - 1.0  # head_mocap
+  - 1.0  # imu_in_torso (sensor, lenient)
+  # Left arm (body indices 22-28)
+  - 1.0  # left_shoulder_pitch_link
+  - 1.0  # left_shoulder_roll_link
+  - 1.0  # left_shoulder_yaw_link
+  - 1.0  # left_elbow_link
+  - 10.0  # left_wrist_roll_link
+  - 10.0  # left_wrist_pitch_link
+  - 10.0  # left_wrist_yaw_link
+  # Right arm (body indices 29-35)
+  - 1.0  # right_shoulder_pitch_link
+  - 1.0  # right_shoulder_roll_link
+  - 1.0  # right_shoulder_yaw_link
+  - 1.0  # right_elbow_link
+  - 10.0  # right_wrist_roll_link
+  - 10.0  # right_wrist_pitch_link
+  - 10.0  # right_wrist_yaw_link
+  pose_w: 0.5
+  rand_reset: true
+  rand_root_pos_offset_scale: 0.075
+  ray_angle: 0.26179938779
+  ray_dx: 0.05
+  ray_num_left: 3
+  ray_num_right: 3
+  ray_points_ahead: 60
+  ray_points_behind: 2
+  ref_char_offset:
+  - 0.0
+  - 0.0
+  - 0.0
+  rel_deepmimic_w: 1.0
+  rel_task_w: 0.0
+  root_height_obs: false
+  root_pos_termination_dist: 0.6
+  root_pos_w: 0.15
+  root_rot_termination_angle: 1.309
+  root_vel_w: 0.1
+  sim_freq: 60
+  start_paused: false
+  tar_obs_steps:
+  - 1
+  - 2
+  - 3
+  - 10
+  - 20
+  - 30
+  target_motion_height_buffer: 0.01
+  target_radius: 1.0
+  task1_w: 0.7
+  task2_w: 0.3
+  termination_height: 0.15
+  track_root: true
+  track_root_h: true
+  use_contact_info: true
+  vel_w: 0.1
+  write_agent_states: false
+env_name: ig_parkour
+sim:
+  physx:
+    bounce_threshold_velocity: 0.2
+    contact_offset: 0.02
+    default_buffer_size_multiplier: 10.0
+    max_depenetration_velocity: 10.0
+    num_position_iterations: 4
+    num_threads: 4
+    num_velocity_iterations: 0
+    rest_offset: 0.0
+    solver_type: 1
+  substeps: 2

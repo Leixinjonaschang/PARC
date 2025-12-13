@@ -1,5 +1,6 @@
 env:
-  camera_mode: track
+  fixed_camera_id: 0 # Uncomment to force lock camera to specific env
+  camera_mode: still
   char_file: data/assets/humanoid.xml
   contact_bodies: []
   contact_detection_eps: 1.0e-05
@@ -127,20 +128,20 @@ env:
     static_friction: 1.0
   pose_termination: true
   pose_termination_dist:
-  - 0.7
-  - 1.0
-  - 0.7
-  - 0.7
-  - 0.7
-  - 0.7
-  - 0.7
-  - 0.7
-  - 1.0
-  - 1.2
-  - 10.0
-  - 1.0
-  - 1.2
-  - 10.0
+  - 0.7 # torso
+  - 1.0 # head
+  - 0.7 # right_upper_arm
+  - 0.7 # right_lower_arm
+  - 0.7 # right_hand
+  - 0.7 # left_upper_arm
+  - 0.7 # left_lower_arm
+  - 0.7 # left_hand
+  - 1.0 # right_thigh
+  - 1.2 # right_shin
+  - 10.0 # right_foot
+  - 1.0 # left_thigh
+  - 1.2 # left_shin
+  - 10.0 # left_foot
   pose_w: 0.5
   rand_reset: true
   rand_root_pos_offset_scale: 0.075
