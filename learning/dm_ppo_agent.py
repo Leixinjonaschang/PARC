@@ -293,10 +293,11 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         compute_time_buffer = torch.zeros(size=[buffer_length, batch_size], dtype=torch.float32, device=self._device)
         self._exp_buffer.add_buffer("compute_time", compute_time_buffer)
         
-        prev_contact_force_buffer = torch.zeros(size=[buffer_length, batch_size, 15, 3], dtype=torch.float32, device=self._device)
+        num_char_bodies = self._env._kin_char_model.get_num_joints()
+        prev_contact_force_buffer = torch.zeros(size=[buffer_length, batch_size, num_char_bodies, 3], dtype=torch.float32, device=self._device)
         self._exp_buffer.add_buffer("prev_char_contact_forces", prev_contact_force_buffer)
 
-        next_contact_force_buffer = torch.zeros(size=[buffer_length, batch_size, 15, 3], dtype=torch.float32, device=self._device)
+        next_contact_force_buffer = torch.zeros(size=[buffer_length, batch_size, num_char_bodies, 3], dtype=torch.float32, device=self._device)
         self._exp_buffer.add_buffer("next_char_contact_forces", next_contact_force_buffer)
 
         env_id_buffer = torch.zeros(size=[buffer_length, batch_size], dtype=torch.int64, device=self._device)
