@@ -121,10 +121,39 @@ def compute_approx_body_constraints(root_pos, root_rot, joint_rot, contacts,
 
     body_pos, body_rot = char_model.forward_kinematics(root_pos, root_rot, joint_rot)
 
-    lf_id = char_model.get_body_id("left_foot")
-    rf_id = char_model.get_body_id("right_foot")
-    lh_id = char_model.get_body_id("left_hand")
-    rh_id = char_model.get_body_id("right_hand")
+    # Body name mappings for different robot models
+    # Maps standard names -> robot-specific names
+    body_name_mappings = {
+        "left_foot": ["left_foot", "left_ankle_roll_link"],
+        "right_foot": ["right_foot", "right_ankle_roll_link"],
+        "left_hand": ["left_hand", "left_wrist_yaw_link", "left_rubber_hand"],
+        "right_hand": ["right_hand", "right_wrist_yaw_link", "right_rubber_hand"],
+    }
+    
+    def get_body_id_with_mapping(char_model, body_name, mappings):
+        """Get body ID with fallback to mapped names for compatibility."""
+        # Try the standard name first
+        if body_name in char_model._name_body_map:
+            return char_model._name_body_map[body_name]
+        
+        # Try mapped names if available
+        if body_name in mappings:
+            for alt_name in mappings[body_name]:
+                if alt_name in char_model._name_body_map:
+                    return char_model._name_body_map[alt_name]
+        
+        # If still not found, raise error with helpful message
+        available_names = list(char_model._name_body_map.keys())
+        error_msg = f"Body name '{body_name}' not found in model.\n"
+        error_msg += f"Available body names: {available_names}\n"
+        if body_name in mappings:
+            error_msg += f"Tried mappings: {mappings[body_name]}"
+        raise AssertionError(error_msg)
+    
+    lf_id = get_body_id_with_mapping(char_model, "left_foot", body_name_mappings)
+    rf_id = get_body_id_with_mapping(char_model, "right_foot", body_name_mappings)
+    lh_id = get_body_id_with_mapping(char_model, "left_hand", body_name_mappings)
+    rh_id = get_body_id_with_mapping(char_model, "right_hand", body_name_mappings)
 
     #ps.register_point_cloud("right hand positions", rh_pos, radius = 0.005)
 
