@@ -27,15 +27,17 @@ def train_tracker(config):
 
     os.makedirs(output_dir, exist_ok=True)
 
+    # Read and update env config (runtime modifications)
     env_config = yaml.safe_load(env_config_path.read_text())
     env_config["env"]["dm"]["motion_file"] = dataset_file
     env_config["env"]["dm"]["terrain_save_path"] = str(output_dir / "terrain.pkl")
 
+    # Read and update agent config (runtime modifications)
     agent_config = yaml.safe_load(agent_config_path.read_text())
     if in_model_file is not None:
         agent_config["normalizer_samples"] = 0
     
-
+    # Write updated configs (these should already exist from parc_0, but we update them with runtime values)
     new_env_config_path = output_dir / "dm_env.yaml"
     new_env_config_path.write_text(yaml.safe_dump(env_config))
 

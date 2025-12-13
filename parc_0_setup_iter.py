@@ -143,6 +143,19 @@ if tracker_env_config_path.exists():
 else:
     print(f"Warning: Could not find env config at {tracker_env_config_path}")
 
+# Setup tracker agent config
+tracker_agent_config_path = Path(tracker_config["agent_config"])
+if not tracker_agent_config_path.exists():
+    tracker_agent_config_path = Path("PARC") / tracker_agent_config_path
+if tracker_agent_config_path.exists():
+    agent_config = yaml.safe_load(tracker_agent_config_path.read_text())
+    output_agent_config_path = output_tracker_dir / "agent_config.yaml"
+    os.makedirs(output_tracker_dir, exist_ok=True)
+    output_agent_config_path.write_text(yaml.dump(agent_config))
+    tracker_config["agent_config"] = str(output_agent_config_path)
+else:
+    print(f"Warning: Could not find agent config at {tracker_agent_config_path}")
+
 if input_tracker_model_path is not None:
     tracker_config["in_model_file"] = str(input_tracker_model_path)
 else:
