@@ -276,26 +276,28 @@ class KinCharModel():
         def get_default_geom_type(xml_root):
             """
             Extracts the default geom type from a MuJoCo XML root node.
-
             Args:
                 xml_root (xml.etree.ElementTree.Element): The root element of the parsed MuJoCo XML.
-
             Returns:
-                str: The default geom type or None if not specified.
+                GeomType: The default geom type. Falls back to GeomType.SPHERE if not specified.
             """
-            # Find the <default> section
             shape_type = None
+
+            # Find the <default> section
             default_elem = xml_root.find('default')
             if default_elem is not None:
-                # Check for the first <geom> in the <default> section
+                # 1) Try <default><geom .../>
                 geom_elem = default_elem.find('geom')
-                if geom_elem is not None:
-                    shape_type = geom_elem.attrib.get('type', None)  # Default type if specified
-                else:
+
+                # 2) If not found, try nested <default><default><geom .../></default>
+                if geom_elem is None:
                     second_default_elem = default_elem.find('default')
-                    geom_elem = second_default_elem.find('geom')
-                    if geom_elem is not None:
-                        shape_type = geom_elem.attrib.get('type', None)  # Default type if specified
+                    if second_default_elem is not None:
+                        geom_elem = second_default_elem.find('geom')
+
+                # 3) If we found a geom, read its type attribute
+                if geom_elem is not None:
+                    shape_type = geom_elem.attrib.get('type', None)
 
             if shape_type == "sphere":
                 shape_type = GeomType.SPHERE
@@ -308,6 +310,7 @@ class KinCharModel():
             elif shape_type == "mesh":
                 shape_type = GeomType.MESH
             else:
+                # Safe fallback if nothing was specified
                 shape_type = GeomType.SPHERE
             
             return shape_type
@@ -378,7 +381,7 @@ class KinCharModel():
                     else:
                         offset = np.array([0.0, 0.0, 0.0])
                     quat = get_quat(geom_node)
-                    geom = Geom(shape_type, offset, size, self._device)
+                    geom = Geom(shape_type, offset, size, self._device, quat=quat)
 
                 elif shape_type == GeomType.MESH:
                     offset = np.fromstring(geom_node.attrib.get("pos", "0.0 0.0 0.0"), dtype=float, sep=" ")
@@ -636,11 +639,11 @@ class KinCharModel():
             joint_type_str = xml_joint_data[0].attrib.get("type")
             if (joint_type_str is None):
                 joint_type_str = default_joint_type
-
             if (joint_type_str == "hinge"):
                 joint = self._parse_hinge_joint(xml_joint_data[0])
             else:
-                assert(False), "Unsupported joint type: {:s}".format(joint_type_str)
+                # Use a generic string conversion to avoid format errors when joint_type_str is None
+                assert(False), "Unsupported joint type: {}".format(joint_type_str)
         else:
             assert(False), "Series joints are not supported."
         
@@ -748,17 +751,30 @@ class KinCharModel():
         return dof_idx
 
     def _parse_default_joint_type(self, xml_node):
-        default_data = xml_node.find("default")
-        default_data = default_data.findall("default")
+        # Support both:
+        # 1) <default><default class="body"><joint type="hinge"/></default></default>
+        # 2) <default><joint type="hinge"/></default>
+        default_elem = xml_node.find("default")
+        if default_elem is None:
+            return None
 
         joint_type_str = None
-        for data in default_data:
+
+        # First, try nested <default class="body"><joint .../></default>
+        nested_defaults = default_elem.findall("default")
+        for data in nested_defaults:
             class_data = data.attrib.get("class")
-            if (class_data == "body"):
+            if class_data == "body":
                 joint_data = data.find("joint")
-                if (joint_data is not None):
+                if joint_data is not None:
                     joint_type_str = joint_data.attrib.get("type")
-                    break
+                    if joint_type_str is not None:
+                        return joint_type_str
+
+        # Fallback: look for a joint directly under <default>
+        joint_data = default_elem.find("joint")
+        if joint_data is not None:
+            joint_type_str = joint_data.attrib.get("type")
 
         return joint_type_str
 
@@ -954,6 +970,15 @@ class KinCharModel():
     def get_geoms(self, body_id) -> List[Geom]: 
         return self._geoms[body_id]
     
+    def get_mesh_vertices(self, mesh_name):
+        """
+        Retrieve vertices for a named mesh.
+        Returns numpy array of shape (N, 3) or None if not found.
+        """
+        if mesh_name in self._meshes:
+            return self._meshes[mesh_name].vertices
+        return None
+
     def extract_frame_data(self, motion_frames):
         root_pos = motion_frames[..., 0:3]
         root_rot = motion_frames[..., 3:6]
