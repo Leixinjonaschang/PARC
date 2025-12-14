@@ -117,7 +117,7 @@ class IGCharEnv(ig_env.IGEnv):
         dof_prop["driveMode"] = drive_mode
         
         if (self._char_control_mode == ControlMode.pd):
-            pass
+            self._set_pd_params(dof_prop, config)
         elif (self._char_control_mode == ControlMode.vel):
             dof_prop["stiffness"] = 0.0
         elif (self._char_control_mode == ControlMode.torque):
@@ -133,6 +133,10 @@ class IGCharEnv(ig_env.IGEnv):
             assert(False), "Unsupported control mode: {}".format(self._char_control_mode)
         
         self._gym.set_actor_dof_properties(env_ptr, char_handle, dof_prop)
+        
+        # Verify PD parameters were actually set in the gym environment
+        if (self._char_control_mode == ControlMode.pd) and (env_id == 0):
+            self._verify_pd_params_from_gym(env_ptr, char_handle, config)
 
         return char_handle
 
@@ -317,6 +321,119 @@ class IGCharEnv(ig_env.IGEnv):
         print(char_info)
         return
     
+    def _verify_pd_params_from_gym(self, env_ptr, char_handle, config):
+        """
+        Verify PD parameters by reading them back from IsaacGym after setting.
+        This is a double-check to ensure the values were actually applied.
+        """
+        if not hasattr(self, '_pd_verified'):
+            self._pd_verified = True
+        else:
+            return  # Already verified
+        
+        # Read DOF properties back from gym (after setting)
+        actual_dof_prop = self._gym.get_actor_dof_properties(env_ptr, char_handle)
+        actual_stiffness = actual_dof_prop["stiffness"]
+        actual_damping = actual_dof_prop["damping"]
+        
+        # Get expected values from config
+        env_config = config.get("env", {})
+        pd_config = env_config.get("pd_params", None)
+        
+        print("\n" + "="*80)
+        print("PD Parameters Verification (from IsaacGym)")
+        print("="*80)
+        print("Reading actual DOF properties from gym environment...")
+        
+        num_joints = self._kin_char_model.get_num_joints()
+        config_used_count = 0
+        xml_used_count = 0
+        mismatch_count = 0
+        
+        print("\nJoint PD Parameters (verified from gym):")
+        print("-" * 80)
+        print(f"{'Joint Name':<30} {'Stiffness':<12} {'Damping':<12} {'Source':<10} {'Status':<10}")
+        print("-" * 80)
+        
+        if pd_config:
+            stiffness_config = pd_config.get("stiffness", {})
+            damping_config = pd_config.get("damping", {})
+        else:
+            stiffness_config = {}
+            damping_config = {}
+        
+        for j in range(1, num_joints):  # Skip root joint (index 0)
+            joint = self._kin_char_model.get_joint(j)
+            joint_name = joint.name
+            joint_dof_dim = joint.get_dof_dim()
+            
+            if joint_dof_dim > 0:
+                dof_idx = joint.dof_idx
+                joint_name_lower = joint_name.lower()
+                
+                # Check if config was expected to be used
+                expected_stiffness = None
+                expected_damping = None
+                matched_stiffness_key = None
+                matched_damping_key = None
+                
+                for key, value in stiffness_config.items():
+                    if key.lower() in joint_name_lower:
+                        expected_stiffness = value
+                        matched_stiffness_key = key
+                        break
+                
+                for key, value in damping_config.items():
+                    if key.lower() in joint_name_lower:
+                        expected_damping = value
+                        matched_damping_key = key
+                        break
+                
+                # Get actual values from gym
+                if joint_dof_dim == 1:
+                    actual_stiff = actual_stiffness[dof_idx] if dof_idx < len(actual_stiffness) else 0
+                    actual_damp = actual_damping[dof_idx] if dof_idx < len(actual_damping) else 0
+                else:
+                    # For multi-DOF joints, show first DOF
+                    actual_stiff = actual_stiffness[dof_idx] if dof_idx < len(actual_stiffness) else 0
+                    actual_damp = actual_damping[dof_idx] if dof_idx < len(actual_damping) else 0
+                
+                # Determine source and verify
+                if matched_stiffness_key or matched_damping_key:
+                    source = "CONFIG"
+                    config_used_count += 1
+                    source_note = f"({matched_stiffness_key or matched_damping_key})"
+                    
+                    # Verify against expected config values
+                    status = "✓ OK"
+                    if expected_stiffness is not None:
+                        if abs(actual_stiff - expected_stiffness) > 0.01:
+                            status = "✗ MISMATCH"
+                            mismatch_count += 1
+                    if expected_damping is not None:
+                        if abs(actual_damp - expected_damping) > 0.01:
+                            status = "✗ MISMATCH"
+                            mismatch_count += 1
+                else:
+                    source = "XML"
+                    xml_used_count += 1
+                    source_note = ""
+                    status = "✓ OK"  # XML values are as-is, no verification needed
+                
+                print(f"{joint_name:<30} {actual_stiff:<12.2f} {actual_damp:<12.2f} {source:<10} {status:<10} {source_note}")
+        
+        print("-" * 80)
+        print(f"\nSummary:")
+        print(f"  Joints using CONFIG: {config_used_count}")
+        print(f"  Joints using XML:    {xml_used_count}")
+        print(f"  Total joints:       {config_used_count + xml_used_count}")
+        if mismatch_count > 0:
+            print(f"  ⚠️  MISMATCHES:      {mismatch_count} (config values not applied correctly!)")
+        else:
+            print(f"  ✓ All values verified successfully")
+        print("="*80 + "\n")
+        return
+    
     def _control_mode_to_drive_mode(self, mode):
         if (mode == ControlMode.pd):
             drive_mode = gymapi.DOF_MODE_POS
@@ -331,6 +448,79 @@ class IGCharEnv(ig_env.IGEnv):
         else:
             assert(False), "Unsupported control mode: {}".format(mode)
         return drive_mode
+    
+    def _set_pd_params(self, dof_prop, config):
+        """
+        Set PD parameters (stiffness and damping) with priority: config > XML.
+        First tries to set from config, if config doesn't specify for a joint, uses XML value.
+        Uses partial matching of joint names to determine which PD parameters to apply.
+        """
+        env_config = config.get("env", {})
+        pd_config = env_config.get("pd_params", None)
+        
+        # Get current values from XML (as defaults)
+        stiffness = dof_prop["stiffness"].copy()
+        damping = dof_prop["damping"].copy()
+        
+        # If no PD config specified, use XML defaults (no change)
+        if pd_config is None:
+            return
+        
+        stiffness_config = pd_config.get("stiffness", {})
+        damping_config = pd_config.get("damping", {})
+        
+        # If config is empty, use XML defaults (no change)
+        if not stiffness_config and not damping_config:
+            return
+        
+        # Get joint information from kinematic model
+        num_joints = self._kin_char_model.get_num_joints()
+        
+        # Process each joint: try config first, fallback to XML if not found in config
+        for j in range(1, num_joints):  # Skip root joint (index 0)
+            joint = self._kin_char_model.get_joint(j)
+            joint_name = joint.name.lower()  # Convert to lowercase for case-insensitive matching
+            joint_dof_dim = joint.get_dof_dim()
+            
+            if joint_dof_dim > 0:
+                # Get DOF indices for this joint
+                dof_idx = joint.dof_idx
+                if joint_dof_dim == 1:
+                    dof_indices = [dof_idx]
+                else:
+                    dof_indices = list(range(dof_idx, dof_idx + joint_dof_dim))
+                
+                # Find matching stiffness from config
+                matched_stiffness = None
+                for key, value in stiffness_config.items():
+                    if key.lower() in joint_name:
+                        matched_stiffness = value
+                        break
+                
+                # Find matching damping from config
+                matched_damping = None
+                for key, value in damping_config.items():
+                    if key.lower() in joint_name:
+                        matched_damping = value
+                        break
+                
+                # Set values from config if matched, otherwise keep XML value
+                if matched_stiffness is not None:
+                    for idx in dof_indices:
+                        if 0 <= idx < len(stiffness):
+                            stiffness[idx] = matched_stiffness
+                # If not matched in config, stiffness[idx] keeps its XML value (already copied)
+                
+                if matched_damping is not None:
+                    for idx in dof_indices:
+                        if 0 <= idx < len(damping):
+                            damping[idx] = matched_damping
+                # If not matched in config, damping[idx] keeps its XML value (already copied)
+        
+        # Update dof_prop with final values (config overrides XML where specified)
+        dof_prop["stiffness"] = stiffness
+        dof_prop["damping"] = damping
+        return
     
     def _build_action_bounds_pd(self):
         env_handle = self._envs[0]

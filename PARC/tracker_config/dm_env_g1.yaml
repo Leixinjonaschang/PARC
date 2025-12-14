@@ -16,6 +16,29 @@ env:
                     5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]  # 29-35: right arm (right_shoulder_pitch, right_shoulder_roll, right_shoulder_yaw, right_elbow, right_wrist_roll, right_wrist_pitch, right_wrist_yaw)
   control_freq: 30
   control_mode: pd
+  # PD parameters: used when XML doesn't specify stiffness/damping
+  # Joint names are matched partially (case-insensitive)
+  pd_params:
+    stiffness:
+      hip_yaw: 100
+      hip_roll: 100
+      hip_pitch: 100
+      knee: 150
+      ankle: 40
+      waist: 100
+      shoulder: 100
+      elbow: 80
+      wrist: 40
+    damping:
+      hip_yaw: 2
+      hip_roll: 2
+      hip_pitch: 2
+      knee: 4
+      ankle: 2
+      waist: 2
+      shoulder: 2
+      elbow: 2
+      wrist: 1
   debug_visuals: false
   demo_mode: false
   dm:
@@ -117,44 +140,44 @@ env:
   pose_termination: true
   pose_termination_dist:
   # Left leg (body indices 1-7 after excluding pelvis)
-  - 1.0  # left_hip_pitch_link
-  - 1.0  # left_hip_roll_link
-  - 1.0  # left_hip_yaw_link
-  - 1.0  # left_knee_link
+  - 2.0  # left_hip_pitch_link
+  - 2.0  # left_hip_roll_link
+  - 2.0  # left_hip_yaw_link
+  - 2.0  # left_knee_link
   - 10.0  # left_ankle_pitch_link
   - 10.0  # left_ankle_roll_link
   - 10.0 # left_toe_link (foot end, very lenient)
   # Pelvis contour (body index 8)
   - 10.0  # pelvis_contour_link
   # Right leg (body indices 9-15)
-  - 1.0  # right_hip_pitch_link
-  - 1.0  # right_hip_roll_link
-  - 1.0  # right_hip_yaw_link
-  - 1.0  # right_knee_link
+  - 2.0  # right_hip_pitch_link
+  - 2.0  # right_hip_roll_link
+  - 2.0  # right_hip_yaw_link
+  - 2.0  # right_knee_link
   - 10.0  # right_ankle_pitch_link
   - 10.0  # right_ankle_roll_link
   - 10.0 # right_toe_link (foot end, very lenient)
   # Waist (body indices 16-18)
-  - 1.0  # waist_yaw_link
-  - 1.0  # waist_roll_link
-  - 1.0  # torso_link
+  - 2.0  # waist_yaw_link
+  - 2.0  # waist_roll_link
+  - 2.0  # torso_link
   # Head (body indices 19-21)
-  - 1.0  # head_link
-  - 1.0  # head_mocap
-  - 1.0  # imu_in_torso (sensor, lenient)
+  - 2.0  # head_link
+  - 2.0  # head_mocap
+  - 2.0  # imu_in_torso (sensor, lenient)
   # Left arm (body indices 22-28)
-  - 1.0  # left_shoulder_pitch_link
-  - 1.0  # left_shoulder_roll_link
-  - 1.0  # left_shoulder_yaw_link
-  - 1.0  # left_elbow_link
+  - 2.0  # left_shoulder_pitch_link
+  - 2.0  # left_shoulder_roll_link
+  - 2.0  # left_shoulder_yaw_link
+  - 2.0  # left_elbow_link
   - 10.0  # left_wrist_roll_link
   - 10.0  # left_wrist_pitch_link
   - 10.0  # left_wrist_yaw_link
   # Right arm (body indices 29-35)
-  - 1.0  # right_shoulder_pitch_link
-  - 1.0  # right_shoulder_roll_link
-  - 1.0  # right_shoulder_yaw_link
-  - 1.0  # right_elbow_link
+  - 2.0  # right_shoulder_pitch_link
+  - 2.0  # right_shoulder_roll_link
+  - 2.0  # right_shoulder_yaw_link
+  - 2.0  # right_elbow_link
   - 10.0  # right_wrist_roll_link
   - 10.0  # right_wrist_pitch_link
   - 10.0  # right_wrist_yaw_link
