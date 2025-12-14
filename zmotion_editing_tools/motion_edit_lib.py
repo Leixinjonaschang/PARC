@@ -224,7 +224,14 @@ def save_motion_data(motion_filepath, motion_frames, contact_frames,
 
     for key, value in kwargs.items():
         if isinstance(value, torch.Tensor):
-            data[key] = value.cpu()
+            # Convert tensor to numpy to completely remove device information
+            # This prevents cross-device loading issues when pickle files are loaded
+            # on different GPU indices (e.g., cuda:1 -> cuda:0)
+            data[key] = value.cpu().detach().numpy()
+        elif isinstance(value, (list, tuple)) and len(value) > 0 and isinstance(value[0], torch.Tensor):
+            # Handle tensor lists (e.g., hf_mask_inds which is List[torch.Tensor])
+            # Convert each tensor in the list to numpy
+            data[key] = [v.cpu().detach().numpy() if isinstance(v, torch.Tensor) else v for v in value]
         else:
             data[key] = value
 

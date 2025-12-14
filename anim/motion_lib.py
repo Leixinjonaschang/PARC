@@ -346,8 +346,14 @@ class MotionLib():
                     if hf_mask_inds is None:
                         self._hf_mask_inds.append(None)
                     else:
+                        # Handle both numpy arrays (new format) and tensors (old format)
                         for t in range(len(hf_mask_inds)):
-                            hf_mask_inds[t] = hf_mask_inds[t].to(device=self._device)
+                            if isinstance(hf_mask_inds[t], torch.Tensor):
+                                # Old format: tensor, just move to device
+                                hf_mask_inds[t] = hf_mask_inds[t].to(device=self._device)
+                            elif isinstance(hf_mask_inds[t], np.ndarray):
+                                # New format: numpy array, convert to tensor on target device
+                                hf_mask_inds[t] = torch.tensor(hf_mask_inds[t], dtype=torch.int64, device=self._device)
                         self._hf_mask_inds.append(hf_mask_inds)
                 else:
                     self._hf_mask_inds.append(None)
