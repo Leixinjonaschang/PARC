@@ -115,7 +115,25 @@ class IGCharEnv(ig_env.IGEnv):
         drive_mode = self._control_mode_to_drive_mode(self._char_control_mode)
         dof_prop = self._gym.get_asset_dof_properties(self._char_asset)
         dof_prop["driveMode"] = drive_mode
-        
+
+        # Sync joint limits from KinCharModel to Physics Engine
+        # KinCharModel now correctly handles 'radian'/'degree' in XML, so we trust it as ground truth.
+        num_joints = self._kin_char_model.get_num_joints()
+        for j in range(1, num_joints):
+            joint = self._kin_char_model.get_joint(j)
+            dof_dim = joint.get_dof_dim()
+            if dof_dim > 0 and joint.limits is not None:
+                dof_idx = joint.dof_idx
+                limits = joint.limits.cpu().numpy()
+                
+                if dof_dim == 1: # Hinge
+                    dof_prop["lower"][dof_idx] = limits[0]
+                    dof_prop["upper"][dof_idx] = limits[1]
+                elif dof_dim == 3: # Spherical
+                    # limits shape is (3, 2)
+                    dof_prop["lower"][dof_idx:dof_idx+3] = limits[:, 0]
+                    dof_prop["upper"][dof_idx:dof_idx+3] = limits[:, 1]
+
         if (self._char_control_mode == ControlMode.pd):
             self._set_pd_params(dof_prop, config)
         elif (self._char_control_mode == ControlMode.vel):
@@ -526,41 +544,63 @@ class IGCharEnv(ig_env.IGEnv):
         env_handle = self._envs[0]
         char_handle = self._get_char_actor_handle()
         dof_prop = self._gym.get_actor_dof_properties(env_handle, char_handle)
-        dof_low = dof_prop["lower"]
-        dof_high = dof_prop["upper"]
         
-        low = np.zeros(dof_high.shape)
-        high = np.zeros(dof_high.shape)
-
+        # Initialize bounds with zeros (shape matching physics)
+        low = np.zeros(dof_prop["lower"].shape)
+        high = np.zeros(dof_prop["upper"].shape)
+        
+        # Instead of trusting 'get_actor_dof_properties' (which might be stale or weirdly scaled),
+        # we strictly use the KinCharModel limits as the ground truth for Action Normalization.
+        # Since we synced KinCharModel -> Physics in _build_character, these SHOULD match.
+        # Using KinCharModel directly ensures mathematical consistency.
+        
         num_joints = self._kin_char_model.get_num_joints()
+
         for j in range(1, num_joints):
             curr_joint = self._kin_char_model.get_joint(j)
             j_dof_dim = curr_joint.get_dof_dim()
 
-            if (j_dof_dim > 0):
-                if (j_dof_dim == 3): # 3D spherical j
-                    # spherical joints are modeled as exponential maps
-                    # so the bounds are computed a bit differently from revolute joints
-                    j_low = curr_joint.get_joint_dof(dof_low)
-                    j_high = curr_joint.get_joint_dof(dof_high)
-                    j_low = np.max(np.abs(j_low))
-                    j_high = np.max(np.abs(j_high))
-                    curr_scale = max([j_low, j_high])
-                    curr_scale = 1.2 * curr_scale
-
-                    curr_low = -curr_scale
-                    curr_high = curr_scale
-                else:
-                    j_low = curr_joint.get_joint_dof(dof_low)
-                    j_high = curr_joint.get_joint_dof(dof_high)
-
-                    curr_mid = 0.5 * (j_high + j_low)
-                    curr_scale = 0.7 * (j_high - j_low)
+            if j_dof_dim > 0 and curr_joint.limits is not None:
+                raw_limits = curr_joint.limits.cpu().numpy()
+                
+                # Expand limits to match DOF layout for this joint
+                if j_dof_dim == 1: # Hinge
+                    # Hinge limits are [min, max]
+                    dof_idx = curr_joint.dof_idx
+                    
+                    # Calculate scaled bounds for PD action space
+                    # Standard PD: action in [-1, 1] maps to [mid - 0.7*range, mid + 0.7*range]
+                    curr_min = raw_limits[0]
+                    curr_max = raw_limits[1]
+                    
+                    curr_mid = 0.5 * (curr_max + curr_min)
+                    curr_scale = 0.7 * (curr_max - curr_min)
                     curr_low = curr_mid - curr_scale
                     curr_high = curr_mid + curr_scale
+                    
+                    low[dof_idx] = curr_low
+                    high[dof_idx] = curr_high
 
-                curr_joint.set_joint_dof(curr_low, low)
-                curr_joint.set_joint_dof(curr_high, high)
+                elif j_dof_dim == 3: # Spherical
+                    # Spherical limits shape [3, 2] -> [min_x, max_x], [min_y, max_y], ...
+                    dof_idx = curr_joint.dof_idx
+                    
+                    for i in range(3):
+                        curr_min = raw_limits[i, 0]
+                        curr_max = raw_limits[i, 1]
+                        
+                        # Spherical logic from original code:
+                        # Symmetric scaling around 0 usually?
+                        # Original code:
+                        # j_low = max(abs(min), abs(max))
+                        # scale = 1.2 * j_low
+                        # bounds = [-scale, scale]
+                        
+                        abs_max = max(abs(curr_min), abs(curr_max))
+                        scale = 1.2 * abs_max
+                        
+                        low[dof_idx + i] = -scale
+                        high[dof_idx + i] = scale
 
         return low, high
 
@@ -706,6 +746,22 @@ class IGCharEnv(ig_env.IGEnv):
     def _apply_action(self, actions):
         clip_action = torch.minimum(torch.maximum(actions, self._action_bound_low), self._action_bound_high)
         self._char_action_buffer[:] = clip_action
+
+        # DEBUG: Print action information (only for first few steps or when enabled)
+        # if hasattr(self, '_debug_action_print') and self._debug_action_print:
+        #     if not hasattr(self, '_apply_action_step_count'):
+        #         self._apply_action_step_count = 0
+        #     if self._apply_action_step_count < 10:  # Print first 10 steps
+        #         print(f"\n=== Apply Action Debug Step {self._apply_action_step_count} ===")
+        #         print(f"Control mode: {self._char_control_mode}")
+        #         print(f"Action bound low (first 5): {self._action_bound_low[:5].cpu().numpy()}")
+        #         print(f"Action bound high (first 5): {self._action_bound_high[:5].cpu().numpy()}")
+        #         print(f"Raw action (first 5): {actions[0, :5].cpu().numpy()}")
+        #         print(f"Clip action (first 5): {clip_action[0, :5].cpu().numpy()}")
+        #         print(f"Action clipped: {(actions != clip_action).any().item()}")
+        #         if (actions != clip_action).any():
+        #             print(f"Number of clipped actions: {(actions != clip_action).sum().item()}")
+        #         self._apply_action_step_count += 1
 
         if (self._char_control_mode == ControlMode.pd):
             action_tensor = gymtorch.unwrap_tensor(self._action_buffer)

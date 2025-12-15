@@ -206,6 +206,16 @@ class KinCharModel():
     def load_char_file(self, char_file):
         tree = ET.parse(char_file)
         xml_doc_root = tree.getroot()
+        
+        # Check for compiler angle setting
+        angle_mode = "degree"
+        compiler_node = xml_doc_root.find("compiler")
+        if compiler_node is not None:
+            angle_attr = compiler_node.attrib.get("angle")
+            if angle_attr is not None:
+                angle_mode = angle_attr
+                print(f"KinCharModel: Parsing '{char_file}' with angle mode: '{angle_mode}'")
+
         xml_world_body = xml_doc_root.find("worldbody")
         assert(xml_world_body is not None)
 
@@ -399,7 +409,7 @@ class KinCharModel():
             return curr_geoms
 
         # recursively adding all bodies into the skel_tree
-        def _add_xml_body(xml_node, parent_index, body_index, default_joint_type):
+        def _add_xml_body(xml_node, parent_index, body_index, default_joint_type, angle_mode):
             
             curr_geoms = get_geom(xml_node)
             geoms.append(curr_geoms)
@@ -425,7 +435,7 @@ class KinCharModel():
                 curr_joint = self._build_root_joint()
             else:
                 joint_data = xml_node.findall("joint")
-                curr_joint = self._parse_joint(body_name, joint_data, default_joint_type)
+                curr_joint = self._parse_joint(body_name, joint_data, default_joint_type, angle_mode)
 
             body_names.append(body_name)
             parent_indices.append(parent_index)
@@ -436,12 +446,12 @@ class KinCharModel():
             curr_index = body_index
             body_index += 1
             for child_body in xml_node.findall("body"):
-                body_index = _add_xml_body(child_body, curr_index, body_index, default_joint_type)
+                body_index = _add_xml_body(child_body, curr_index, body_index, default_joint_type, angle_mode)
 
             return body_index
         
         self._meshes = load_mujoco_meshes(char_file)
-        _add_xml_body(xml_body_root, -1, 0, default_joint_type)
+        _add_xml_body(xml_body_root, -1, 0, default_joint_type, angle_mode)
 
         self.init(body_names=body_names,
                   parent_indices=parent_indices,
@@ -628,19 +638,19 @@ class KinCharModel():
                       axis=None)
         return joint
     
-    def _parse_joint(self, body_name, xml_joint_data, default_joint_type):
+    def _parse_joint(self, body_name, xml_joint_data, default_joint_type, angle_mode="degree"):
         num_joints = len(xml_joint_data)
 
         if (num_joints == 0):
             joint = self._parse_fixed_joint(body_name)
         elif (num_joints == 3):
-            joint = self._parse_sphere_joint(xml_joint_data, default_joint_type)
+            joint = self._parse_sphere_joint(xml_joint_data, default_joint_type, angle_mode)
         elif (num_joints == 1):
             joint_type_str = xml_joint_data[0].attrib.get("type")
             if (joint_type_str is None):
                 joint_type_str = default_joint_type
             if (joint_type_str == "hinge"):
-                joint = self._parse_hinge_joint(xml_joint_data[0])
+                joint = self._parse_hinge_joint(xml_joint_data[0], angle_mode)
             else:
                 # Use a generic string conversion to avoid format errors when joint_type_str is None
                 assert(False), "Unsupported joint type: {}".format(joint_type_str)
@@ -649,7 +659,7 @@ class KinCharModel():
         
         return joint
 
-    def _parse_hinge_joint(self, xml_joint_data):
+    def _parse_hinge_joint(self, xml_joint_data, angle_mode="degree"):
         joint_name = xml_joint_data.attrib.get("name")
 
         joint_pos_data = xml_joint_data.attrib.get("pos")
@@ -666,7 +676,14 @@ class KinCharModel():
             assert(False), "Need joint limits"
         joint_limits = np.fromstring(joint_limits_str, dtype=float, sep=" ")
         joint_limits = torch.from_numpy(joint_limits).to(dtype=torch.float32, device=self._device)
-        joint_limits *= torch.pi / 180.0
+        
+        if angle_mode == "degree":
+            joint_limits *= torch.pi / 180.0
+        elif angle_mode == "radian":
+            pass # limits are already in radians
+        else:
+             print(f"Warning: Unsupported angle mode '{angle_mode}', treating as degree")
+             joint_limits *= torch.pi / 180.0
 
         joint = Joint(name=joint_name,
                       joint_type=JointType.HINGE,
@@ -674,7 +691,7 @@ class KinCharModel():
                       limits=joint_limits)
         return joint
 
-    def _parse_sphere_joint(self, xml_joint_data, default_joint_type):
+    def _parse_sphere_joint(self, xml_joint_data, default_joint_type, angle_mode="degree"):
         # consolidate series of three hinge joints into a single spherical joint
         num_joints = len(xml_joint_data)
         assert(num_joints == 3)
@@ -704,7 +721,15 @@ class KinCharModel():
 
         joint_limits = np.stack(joint_limits)
         joint_limits = torch.from_numpy(joint_limits).to(dtype=torch.float32, device=self._device)
-        joint_limits *= torch.pi / 180.0
+        
+        if angle_mode == "degree":
+            joint_limits *= torch.pi / 180.0
+        elif angle_mode == "radian":
+            pass # limits are already in radians
+        else:
+             print(f"Warning: Unsupported angle mode '{angle_mode}', treating as degree")
+             joint_limits *= torch.pi / 180.0
+            
         if (is_spherical):
             joint_name = xml_joint_data[0].attrib.get("name")
             joint_name = joint_name[:joint_name.rfind('_')]
