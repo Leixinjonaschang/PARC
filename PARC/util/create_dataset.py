@@ -54,7 +54,7 @@ def create_dataset_yaml(
         folder_names = sorted([p for p in folder_path.iterdir() if p.is_dir()])
         
         for folder in folder_names:
-            if "ignore" in str(folder):
+            if "ignore" in str(folder) or folder.name == "log":
                 continue
             motion_classes.append(folder.name)
             motion_class_proportions[folder.name] = 1.0
@@ -166,16 +166,25 @@ def create_dataset_yaml(
 
     motion_class_weight_factor = {}
 
-    for m_class in motion_classes:
-        print(m_class, "total length:", motion_class_lengths[m_class])
+    if total_length == 0:
+        print("Warning: Total length of all motions is 0. Setting all weights to 0.")
+        for m_class in motion_classes:
+            motion_class_weight_factor[m_class] = 0.0
+    else:
+        for m_class in motion_classes:
+            print(m_class, "total length:", motion_class_lengths[m_class])
 
-        fraction = motion_class_lengths[m_class] / total_length
-        print(m_class, "fraction:", fraction)
-        intended_fraction = motion_class_proportions[m_class] / motion_class_proportions_sum
-        print(m_class, "intended fraction", intended_fraction)
-        print(m_class, "weight_factor", intended_fraction / fraction)
-
-        motion_class_weight_factor[m_class] = intended_fraction / fraction
+            fraction = motion_class_lengths[m_class] / total_length
+            print(m_class, "fraction:", fraction)
+            intended_fraction = motion_class_proportions[m_class] / motion_class_proportions_sum
+            print(m_class, "intended fraction", intended_fraction)
+            
+            if fraction > 0:
+                print(m_class, "weight_factor", intended_fraction / fraction)
+                motion_class_weight_factor[m_class] = intended_fraction / fraction
+            else:
+                print(m_class, "weight_factor set to 0 because fraction is 0")
+                motion_class_weight_factor[m_class] = 0.0
 
     print("total length:", total_length)
 
