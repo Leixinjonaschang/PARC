@@ -18,6 +18,11 @@ model:
   actor_net: fc_3layers_2048units
   actor_std_type: FIXED
   critic_net: fc_3layers_2048units
+  obs_encoders:
+    tar_obs:
+      type: mlp
+      latent_dim: 32
+      hidden_dims: [512, 512, 256]
 norm_adv_clip: 4.0
 norm_obs_clip: 10.0
 normalizer_samples: 300000000
