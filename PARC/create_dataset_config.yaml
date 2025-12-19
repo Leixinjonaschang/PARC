@@ -1,9 +1,8 @@
-save_path: "../tests/parc/april272025/iter_2/testt.yaml"
+save_path: "../tests/parc/experiment_g1/iter_1/iter_1_dataset.yaml"
 folder_paths:
-- "../tests/parc/april272025/iter_2/p4_phys_record/recorded_motions/"
-- "../tests/parc/april272025/iter_1/p4_phys_record/recorded_motions/"
-- "../Data/parkour_dataset_april/initial/"
-char_filepath: "data/assets/humanoid.xml"
+- "../tests/parc/experiment_g1/iter_1/p4_phys_record/recorded_motions/"
+- "../Data/initial_retargeted_g1_processed/"
+char_filepath: "data/assets/unitree_g1/g1_mocap_29dof.xml"
 compute_preprocessing_data: true
 cut_some_classes_in_half: true
 motion_classes_to_cut_in_half:

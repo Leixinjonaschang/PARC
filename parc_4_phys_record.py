@@ -33,7 +33,7 @@ def record_motions(config):
         phys_record_env_config = yaml.safe_load(env_config_path.read_text())
         phys_record_env_config["env"]["dm"]["motion_file"] = str(dataset_file_path)
         phys_record_env_config["env"]["dm"]["terrain_save_path"] = str(output_dir / "terrain.pkl")
-        phys_record_env_config["env"]["output_motion_dir"] = str(output_dir / "recorded_motions")
+        phys_record_env_config["env"]["output_motion_dir"] = str(output_dir / "recorded_motions/ generated_motions")
         phys_record_env_config_path = output_dir / "record_env.yaml"
         phys_record_env_config_path.write_text(yaml.safe_dump(phys_record_env_config))
     except IOError:

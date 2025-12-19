@@ -91,10 +91,12 @@ normalize_dofs: False
 # motion_lib_file: "data/motions/MGDM/mgdm_list_04.yaml"
 #motion_lib_file: "../Data/mixed_data_running_fixed/motions.yaml"
 #motion_lib_file: "../Data/beyond/platforms/retargeted_03/edited_2/motions.yaml"
-motion_lib_file: "../Data/parkour_dataset/v_23/motions.yaml"
-sampler_save_filepath: "../Data/samplers/parkour_dataset_v_23.pkl"
-output_dir: "../tests/train_mdm/parkour_dataset_v_23_test03/"
+# motion_lib_file: "../Data/parkour_dataset/v_23/motions.yaml"
+# motion_lib_file: "../tests/parc/experiment/iter_1/p1_train_gen/iter_1_start_motions.yaml"
+# sampler_save_filepath: "../tests/parc/experiment/iter_1/p1_train_gen/sampler.pkl"
+# output_dir: "../tests/train_mdm/parkour_dataset_v_23_test03/"
 char_file: "data/assets/humanoid.xml"
+# char_file: "data/assets/unitree_g1/g1_mocap_29dof.xml"
 sequence_duration: 0.5 # seconds
 sequence_fps: 30
 

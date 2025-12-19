@@ -3,33 +3,35 @@ import os
 import datetime
 from pathlib import Path
 # this script is used to set up the configs for the PARC iteration
-
-output_dir = Path("../tests/parc/experiment/iter_1/")
+output_dir = Path("../tests/parc/experiment_g1/iter_1/")
 
 ##### INPUT PATHS #####
+
+## MDM CONFIG ###
 input_mdm_config_path = Path("PARC/train_gen_default.yaml")
 input_model_path = None # put path to model here after iteration 1
+input_char_file = Path("data/assets/unitree_g1/g1_mocap_29dof.xml")
 
+## KINEMATICS GENERATION CONFIG ###
 input_kin_gen_config_path = Path("PARC/kin_gen_default.yaml")
-
-input_tracker_config_path = Path("PARC/tracker_default.yaml")
-input_sampler_stats_path = None # put path to sampler stats file here (used for normalizing samples) after iter 1
-
-input_phys_record_config_path = Path("PARC/phys_record_default.yaml")
-
-### GENERATION CONFIG ###
 kin_gen_num_batches_of_motions = 10 # number of parallel jobs to run
 kin_gen_num_motions_per_batch = 50
 kin_gen_motion_id_offset = 0 # numbering starts from this number
 kin_gen_save_name = "boxes"
 
-### TRACKER CONFIG ###
+## TRACKER CONFIG ###
+input_tracker_config_path = Path("PARC/tracker_default.yaml")
+input_sampler_stats_path = None # put path to sampler stats file here (used for normalizing samples) after iter 1
 input_tracker_model_path = None # put path to tracker here after iteration 1
+
+
+## PHYS RECORD CONFIG ###
+input_phys_record_config_path = Path("PARC/phys_record_default.yaml")
 
 ### CREATE DATASET CONFIG ###
 input_create_dataset_config_path = Path("PARC/create_dataset_config.yaml")
-iter_start_dataset_path = Path("../tests/parc/april272025/iter_1/iter_1_start_motions.yaml")
-input_dataset_folder_paths = ["../Data/initial/"] # replace with path to your initial dataset, could be the downloaded dataset "parc_dataset_august_12/initial_aug/" if you want to reproduce results
+iter_start_dataset_path = Path("../tests/parc/experiment_g1/iter_1/iter_1_start_motions.yaml")
+input_dataset_folder_paths = ["../Data/initial_retargeted_g1_processed/"] # replace with path to your initial dataset, could be the downloaded dataset "parc_dataset_august_12/initial_aug/" if you want to reproduce results
 
 
 write_train_gen = True
@@ -41,18 +43,17 @@ write_phys_record = True
 # Ensure all input paths exist
 assert input_create_dataset_config_path.is_file()
 assert input_mdm_config_path.is_file()
-assert input_model_path.is_file()
+if input_model_path is not None:
+    assert input_model_path.is_file()
 assert input_kin_gen_config_path.is_file()
 assert input_tracker_config_path.is_file()
 #assert
 
-
+# create output directories
 output_train_gen_dir = output_dir / "p1_train_gen"
 output_kin_gen_dir = output_dir / "p2_kin_gen"
 output_tracker_dir = output_dir / "p3_tracker"
 output_phys_record_dir = output_dir / "p4_phys_record"
-
-
 
 
 timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

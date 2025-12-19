@@ -1,6 +1,9 @@
-input_terrains: ../tests/val_tests/demo/spiral/spiral.yaml
-mdm_model: ../tests/train_mdm/parkour_dataset_v_21_test01/checkpoints/model_30000.pkl
+input_terrains: /home/phi/CLX/projects/humanoid_loco/tests/parc/april272025/demo/TEASER_TERRAIN_mxu_motion.yaml
+mdm_model: /home/phi/CLX/projects/humanoid_loco/tests/parc/april272025/iter_3/p1_train_gen/checkpoints/model_20000.pkl
 output_folder: ../tests/val_tests/demo/spiral/
+
+# input_terrains: /home/phi/CLX/projects/humanoid_loco/terrain-generator/results/generated_terrain/mesh_0/mesh.pkl
+# mdm_model: /home/phi/CLX/projects/humanoid_loco/tests/parc/april272025/iter_3/p1_train_gen/checkpoints/model_20000.pkl
 
 mdm_path:
   next_node_lookahead: 7

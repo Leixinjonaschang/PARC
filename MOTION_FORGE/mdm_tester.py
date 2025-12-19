@@ -30,7 +30,7 @@ from diffusion.mdm_heightfield_contact_motion_sampler import MDMHeightfieldConta
 # View the motion id and losses for each env
 
 ## GLOBALS ##
-g_batch_size = 16
+g_batch_size = 1
 g_losses = None
 g_total_losses = None
 g_conds = None
@@ -42,8 +42,11 @@ ps.set_ground_plane_mode("none")
 ps.set_background_color([0.0, 0.0, 0.0])
 ps.init()
 
-sampler_file_path = "../Data/samplers/mdm_batch_05_dm.pkl"
-input_mdm_path = "../tests/train_mdm/parkour_dataset_v_21_test01/checkpoints/model_7500.pkl"
+sampler_file_path = "../tests/parc/experiment_g1/iter_1/p1_train_gen/sampler.pkl"
+input_mdm_path = "../tests/parc/experiment_g1/iter_1/p1_train_gen/checkpoints/model_5000.pkl"
+
+# sampler_file_path = "../tests/parc/experiment/iter_1/p1_train_gen/sampler.pkl"
+# input_mdm_path = "../tests/parc/april272025/iter_3/p1_train_gen/checkpoints/model_20000.pkl"
 
 def load_mdm(mdm_path) -> mdm.MDM:
     # Detect available device

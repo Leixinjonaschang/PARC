@@ -136,7 +136,7 @@ def print_frame_data(data, frame_idx):
 def main():
     parser = argparse.ArgumentParser(description="Preview specific frame data from a PARC .pkl motion file.")
     parser.add_argument("file_path", type=str, help="Path to the .pkl file")
-    parser.add_argument("frame_idx", type=int, nargs='?', default=0, help="Index of the frame to view (default: 0)")
+    parser.add_argument("frame_idx", type=int, nargs='?', default=-1, help="Index of the frame to view (default: 0)")
     
     args = parser.parse_args()
 

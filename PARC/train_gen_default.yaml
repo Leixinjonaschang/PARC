@@ -87,7 +87,7 @@ normalize_dofs: False
 motion_lib_file: "../Data/parkour_dataset_april/initial/motions.yaml"
 sampler_save_filepath: "output/parc/sampler.pkl"
 output_dir: "../tests/train_mdm/parkour_dataset_v_23_test03/"
-char_file: "data/assets/humanoid.xml"
+char_file: "data/assets/unitree_g1/g1_mocap_29dof.xml"
 sequence_duration: 0.5 # seconds
 sequence_fps: 30
 

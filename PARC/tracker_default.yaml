@@ -1,5 +1,5 @@
-env_config: PARC/tracker_config/dm_env_default.yaml
-agent_config: "PARC/tracker_config/dm_agent_default.yaml"
+env_config: PARC/tracker_config/dm_env_g1.yaml
+agent_config: "PARC/tracker_config/dm_agent_g1.yaml"
 output_dir: "../tests/parc/april272025/tracker/iter_2/"
 num_envs: 2048
 max_samples: 10000000000

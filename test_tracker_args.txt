@@ -1,0 +1,7 @@
+--env_config /home/phi/CLX/projects/humanoid_loco/tests/parc/experiment_g1/iter_1/p3_tracker/dm_env.yaml
+--agent_config /home/phi/CLX/projects/humanoid_loco/tests/parc/experiment_g1/iter_1/p3_tracker/agent_config.yaml
+--model_file /home/phi/CLX/projects/humanoid_loco/tests/parc/experiment_g1/iter_1/p3_tracker/checkpoints/model_0000007800.pt
+--mode test
+--visualize True
+--num_envs 128
+--device cuda:0
