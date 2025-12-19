@@ -80,11 +80,41 @@ def load_mdm(mdm_path: Path) -> mdm.MDM:
         mdm_path = max(number_file_pairs, key=lambda x: x[0])[1]
 
     print("loading path:", mdm_path)
-    ret_mdm = pickle.load(mdm_path.open("rb"))
-    if ret_mdm.use_ema:
-        print('Using EMA model...')
-        ret_mdm._denoise_model = ret_mdm._ema_denoise_model
-    ret_mdm.update_old_mdm()
+    
+    # Handle device mapping for MDM loading
+    # Detect available device
+    if torch.cuda.is_available():
+        target_device = "cuda:0"
+    else:
+        target_device = "cpu"
+    
+    # Temporarily modify torch's default restore location function to handle device mapping
+    import torch.serialization as serialization
+    original_restore_location = serialization.default_restore_location
+    
+    def device_mapping_restore_location(storage, location):
+        # Map all CUDA devices to the target device
+        if isinstance(location, str):
+            if location.startswith('cuda'):
+                location = target_device
+        return original_restore_location(storage, location)
+    
+    # Temporarily replace restore_location function
+    serialization.default_restore_location = device_mapping_restore_location
+    
+    try:
+        ret_mdm = pickle.load(mdm_path.open("rb"))
+        if ret_mdm.use_ema:
+            print('Using EMA model...')
+            ret_mdm._denoise_model = ret_mdm._ema_denoise_model
+        ret_mdm.update_old_mdm()
+        
+        # Use MDM's set_device method to ensure all states are properly moved to target device
+        ret_mdm.set_device(target_device)
+    finally:
+        # Restore the original restore_location function
+        serialization.default_restore_location = original_restore_location
+
     return ret_mdm
 
 def mdm_procgen(config, input_mdm_model = None):
@@ -110,19 +140,63 @@ def mdm_procgen(config, input_mdm_model = None):
         input_paths = []
 
         if os.path.splitext(input_terrain_path)[1] == ".pkl":
-            with open(input_terrain_path, "rb") as f:
-                input_terrains.append(pickle.load(f)["terrain"])
-                input_terrains[0].to_torch(cpu_device)
+            # Detect the available device
+            if torch.cuda.is_available():
+                target_device = "cuda:0"
+            else:
+                target_device = "cpu"
+            
+            # Temporarily modify torch's default restore function to handle device mapping
+            import torch.serialization as serialization
+            original_restore_location = serialization.default_restore_location
+            
+            def device_mapping_restore_location(storage, location):
+                if isinstance(location, str):
+                    if location.startswith('cuda'):
+                        location = target_device
+                return original_restore_location(storage, location)
+            
+            serialization.default_restore_location = device_mapping_restore_location
+            
+            try:
+                with open(input_terrain_path, "rb") as f:
+                    terrain_data = pickle.load(f)
+                    input_terrains.append(terrain_data["terrain"])
+                    input_terrains[0].to_torch(target_device)
+            finally:
+                serialization.default_restore_location = original_restore_location
+
         elif os.path.splitext(input_terrain_path)[1] == ".yaml":
-            with open(input_terrain_path, "r") as f:
-                input_terrains_yaml = yaml.safe_load(f)
-                for curr_terrain_path in input_terrains_yaml["terrains"]:
-                    with open(curr_terrain_path, "rb") as f2:
-                        terrain_data = pickle.load(f2)
-                        input_terrains.append(terrain_data["terrain"])
-                        input_terrains[-1].to_torch(cpu_device)
-                        input_paths.append(terrain_data["path_nodes"])
-                        input_paths[-1] = input_paths[-1].to(device=cpu_device)
+            # Detect the available device
+            if torch.cuda.is_available():
+                target_device = "cuda:0"
+            else:
+                target_device = "cpu"
+            
+            # Temporarily modify torch's default restore function to handle device mapping
+            import torch.serialization as serialization
+            original_restore_location = serialization.default_restore_location
+            
+            def device_mapping_restore_location(storage, location):
+                if isinstance(location, str):
+                    if location.startswith('cuda'):
+                        location = target_device
+                return original_restore_location(storage, location)
+            
+            serialization.default_restore_location = device_mapping_restore_location
+            
+            try:
+                with open(input_terrain_path, "r") as f:
+                    input_terrains_yaml = yaml.safe_load(f)
+                    for curr_terrain_path in input_terrains_yaml["terrains"]:
+                        with open(curr_terrain_path, "rb") as f2:
+                            terrain_data = pickle.load(f2)
+                            input_terrains.append(terrain_data["terrain"])
+                            input_terrains[-1].to_torch(target_device)
+                            input_paths.append(terrain_data["path_nodes"])
+                            input_paths[-1] = input_paths[-1].to(device=target_device)
+            finally:
+                serialization.default_restore_location = original_restore_location
         else:
             assert False
 
@@ -289,7 +363,7 @@ def mdm_procgen(config, input_mdm_model = None):
 
                     terrain.hf[:, :] = input_terrain.hf[start_dim_x:start_dim_x + new_terrain_dim_x, start_dim_y:start_dim_y + new_terrain_dim_y].clone()
 
-                    min_point_offset = input_terrain.get_point(torch.tensor([start_dim_x, start_dim_y], dtype=torch.int64, device=cpu_device))
+                    min_point_offset = input_terrain.get_point(torch.tensor([start_dim_x, start_dim_y], dtype=torch.int64, device=input_terrain.hf.device))
                     
                     slice_terrain = False
                 hf_orig = terrain.hf.clone()
