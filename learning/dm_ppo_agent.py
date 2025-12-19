@@ -44,6 +44,16 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         if self._env._report_tracking_error:
             self._test_tracking_error_tracker.reset()
         return
+
+    def _check_nan(self, tensor, name, exit_on_nan=True):
+        if torch.isnan(tensor).any():
+            count = torch.isnan(tensor).sum().item()
+            print(f"CRITICAL ERROR: NaN in {name} - count: {count}/{tensor.numel()}")
+            if exit_on_nan:
+                print("Exiting program due to NaN detection.")
+                exit()
+            return True
+        return False
     
     def _load_params(self, config):
         super()._load_params(config)
@@ -128,11 +138,22 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         self.eval()
         self.set_mode(base_agent.AgentMode.TEST)
 
+        # Enable action debugging
+        self._debug_action_print = True
+        if hasattr(self._env, '_debug_action_print'):
+            self._env._debug_action_print = True
 
         print("******************** TESTING MODEL ********************")
+        print("Action debugging enabled - will print first 10 steps")
         self.hard_reset_envs()
         test_info = self._rollout_test(num_episodes)
         print("******************** FINISHED TESTING MODEL ********************")
+        
+        # Disable action debugging
+        self._debug_action_print = False
+        if hasattr(self._env, '_debug_action_print'):
+            self._env._debug_action_print = False
+        
         return test_info
     
     def _build_return_tracker(self):
@@ -352,17 +373,17 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         
         norm_next_obs = self._obs_norm.normalize(next_obs)
 
-        ## FOR TRANSFORMER and CNN ##
-        # split eval critic into smaller batches because transformer can't take it all in memory
-        # next_vals = torch.zeros(size=norm_next_obs.shape[0:2], dtype=torch.float32, device=self._device)
-        # for i in range(norm_next_obs.shape[0]):
-        #     curr_next_vals = self._model.eval_critic(norm_next_obs[i])
-        #     curr_next_vals = curr_next_vals.squeeze(-1).detach()
-        #     next_vals[i] = curr_next_vals
+        # 检查关键变量的 NaN
+        self._check_nan(obs, "obs")
+        self._check_nan(norm_next_obs, "norm_next_obs")
+        self._check_nan(r, "reward")
+        self._check_nan(done, "done")
+        self._check_nan(rand_action_mask, "rand_action_mask")
 
         ## FOR MLP ##
         next_vals = self._model.eval_critic(norm_next_obs)
         next_vals = next_vals.squeeze(-1).detach()
+        self._check_nan(next_vals, "next_vals")
 
         val_min, val_max = self._compute_val_bound()
         next_vals = torch.clamp(next_vals, val_min, val_max)
@@ -376,28 +397,31 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         next_vals[fail_mask] = fail_val
 
         new_vals = rl_util.compute_td_lambda_return(r, next_vals, done, self._discount, self._td_lambda)
+        self._check_nan(new_vals, "new_vals (TD returns)")
 
         norm_obs = self._obs_norm.normalize(obs)
-
-        ## FOR TRANSFORMER and CNN ##
-        # vals = torch.zeros(size=norm_obs.shape[0:2], dtype=torch.float32, device=self._device)
-        # for i in range(norm_obs.shape[0]):
-        #     curr_vals = self._model.eval_critic(norm_obs[i])
-        #     curr_vals = curr_vals.squeeze(-1).detach()
-        #     vals[i] = curr_vals
 
         ## FOR MLP ##
         vals = self._model.eval_critic(norm_obs)
         vals = vals.squeeze(-1).detach()
-
+        self._check_nan(vals, "vals (critic output)")
 
         adv = new_vals - vals
+        self._check_nan(adv, "raw advantage")
         
         rand_action_mask = (rand_action_mask == 1.0).flatten()
         adv_flat = adv.flatten()
         rand_action_adv = adv_flat[rand_action_mask]
+        
+        if rand_action_adv.numel() == 0:
+            print("ERROR: No random actions in batch!")
+            rand_action_adv = adv_flat
+        
+        # 简化优势函数统计
         adv_std, adv_mean = torch.std_mean(rand_action_adv)
-        norm_adv = (adv - adv_mean) / torch.clamp_min(adv_std, 1e-5)
+        adv_std = torch.clamp_min(adv_std, 1e-5)
+        
+        norm_adv = (adv - adv_mean) / adv_std
         norm_adv = torch.clamp(norm_adv, -self._norm_adv_clip, self._norm_adv_clip)
         
         self._exp_buffer.set_data("tar_val", new_vals)

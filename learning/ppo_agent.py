@@ -84,6 +84,16 @@ class PPOAgent(base_agent.BaseAgent):
         self._exp_buffer.reset()
         return
 
+    def _check_nan(self, tensor, name, exit_on_nan=True):
+        if torch.isnan(tensor).any():
+            count = torch.isnan(tensor).sum().item()
+            print(f"CRITICAL ERROR: NaN in {name} - count: {count}/{tensor.numel()}")
+            if exit_on_nan:
+                print("Exiting program due to NaN detection.")
+                exit()
+            return True
+        return False
+
     def _decide_action(self, obs, info):
         norm_obs = self._obs_norm.normalize(obs)
         norm_action_dist = self._model.eval_actor(norm_obs)
@@ -112,11 +122,25 @@ class PPOAgent(base_agent.BaseAgent):
         norm_a_logp = norm_a_logp.detach()
         a = self._a_norm.unnormalize(norm_a)
 
+        if getattr(self, "_debug_action_print", False):
+            self._print_action_stats(a, norm_a)
+
         a_info = {
             "a_logp": norm_a_logp,
             "rand_action_mask": rand_action_mask
         }
         return a, a_info
+
+    def _print_action_stats(self, a, norm_a):
+        if not hasattr(self, "_action_step_count"):
+            self._action_step_count = 0
+        
+        if self._action_step_count < 10:
+            print(f"\n--- Action Debug Step {self._action_step_count} ---")
+            print(f"Norm Action (mean/std): {norm_a.mean().item():.4f} / {norm_a.std().item():.4f}")
+            print(f"Norm Action (min/max): {norm_a.min().item():.4f} / {norm_a.max().item():.4f}")
+            print(f"Action (mean/std): {a.mean().item():.4f} / {a.std().item():.4f}")
+            self._action_step_count += 1
 
     def _record_data_pre_step(self, obs, info, action, action_info):
         super()._record_data_pre_step(obs, info, action, action_info)
@@ -134,8 +158,15 @@ class PPOAgent(base_agent.BaseAgent):
         rand_action_mask = self._exp_buffer.get_data("rand_action_mask")
         
         norm_next_obs = self._obs_norm.normalize(next_obs)
+        self._check_nan(obs, "obs")
+        self._check_nan(norm_next_obs, "norm_next_obs")
+        self._check_nan(r, "reward")
+        self._check_nan(done, "done")
+        self._check_nan(rand_action_mask, "rand_action_mask")
+
         next_vals = self._model.eval_critic(norm_next_obs)
         next_vals = next_vals.squeeze(-1).detach()
+        self._check_nan(next_vals, "next_vals")
 
         val_min, val_max = self._compute_val_bound()
         next_vals = torch.clamp(next_vals, val_min, val_max)
@@ -149,11 +180,15 @@ class PPOAgent(base_agent.BaseAgent):
         next_vals[fail_mask] = fail_val
 
         new_vals = rl_util.compute_td_lambda_return(r, next_vals, done, self._discount, self._td_lambda)
+        self._check_nan(new_vals, "new_vals (TD returns)")
 
         norm_obs = self._obs_norm.normalize(obs)
         vals = self._model.eval_critic(norm_obs)
         vals = vals.squeeze(-1).detach()
+        self._check_nan(vals, "vals (critic output)")
+
         adv = new_vals - vals
+        self._check_nan(adv, "raw advantage")
         
         rand_action_mask = (rand_action_mask == 1.0).flatten()
         adv_flat = adv.flatten()
@@ -219,22 +254,9 @@ class PPOAgent(base_agent.BaseAgent):
         critic_loss = critic_info["critic_loss"]
         actor_loss = actor_info["actor_loss"]
 
-        #print("critic loss:", critic_loss)
-        #print("actor loss:", actor_loss)
-
         if critic_loss.item() > 20.0:
             print("LARGE CRITIC LOSS")
             print("critic loss:", critic_loss)
-            print("actor loss:", actor_loss)
-            # batch_file = "output/debug_batch_" + str(critic_loss.item()) + ".pkl"
-            # with open(batch_file, "wb") as f:
-            #     pickle.dump(batch, f)
-
-            # model_file = "output/model_" + str(critic_loss.item()) + ".pt"
-
-            # self.save(model_file)
-            # If critic loss is too large, we shouldn't trust our critic to give
-            # good backprop gradients for the actor
             actor_loss = actor_loss.detach()
             
             
