@@ -23,6 +23,9 @@ model:
       type: mlp
       latent_dim: 32
       hidden_dims: [512, 512, 256]
+  future_pose_predictor:
+    hidden_dims: [512, 512, 256]
+    learning_rate: 1e-4
 norm_adv_clip: 4.0
 norm_obs_clip: 10.0
 normalizer_samples: 300000000
