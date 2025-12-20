@@ -4,7 +4,22 @@ import numpy as np
 import copy
 from collections import OrderedDict
 import gym
-from learning.modules.mlp_encoder import MLPEncoder
+
+class MLPEncoder(nn.Module):
+    def __init__(self, input_dim, output_dim, hidden_dims=[256, 128], activation=nn.ELU):
+        super().__init__()
+        layers = []
+        curr_dim = input_dim
+        for h in hidden_dims:
+            layers.append(nn.Linear(curr_dim, h))
+            layers.append(activation())
+            curr_dim = h
+        layers.append(nn.Linear(curr_dim, output_dim))
+        self.fc = nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.fc(x)
+        return torch.nn.functional.normalize(x, p=2, dim=-1)
 
 class ObservationEncoder(nn.Module):
     def __init__(self, config, env, device):
@@ -63,9 +78,6 @@ class ObservationEncoder(nn.Module):
     def get_output_obs_shapes(self):
         return self._output_obs_shapes
     
-    def get_obs_shapes(self):
-        return self._obs_shapes
-
     def get_output_dim(self):
         return self._total_output_dim
 
@@ -94,16 +106,6 @@ class ObservationEncoder(nn.Module):
         start, end = self._obs_slices[key]
         part = obs[..., start:end]
         return self._encoders[key](part)
-
-    def get_raw_part(self, obs, key):
-        """
-        Get the raw observation part for a given key without any encoding.
-        """
-        if key not in self._obs_slices:
-            raise KeyError(f"Key '{key}' not found in observation shapes. Available keys: {list(self._obs_slices.keys())}")
-            
-        start, end = self._obs_slices[key]
-        return obs[..., start:end]
 
     def forward(self, obs):
         processed_parts = []
