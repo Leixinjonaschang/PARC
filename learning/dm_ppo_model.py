@@ -15,6 +15,7 @@ import learning.obs_encoder as obs_encoder
 class DMPPOModel(ppo_model.PPOModel):
     def __init__(self, config, env):
         super().__init__(config, env)
+        self._build_future_pose_predictor(config)
         return
     
     def _build_action_distribution_dm_ViT(self, config, env, in_size):
@@ -104,3 +105,63 @@ class DMPPOModel(ppo_model.PPOModel):
     def eval_critic(self, obs):
         processed_obs = self.obs_encoder(obs)
         return super().eval_critic(processed_obs)
+
+    def _build_future_pose_predictor(self, config):
+        # Predictor Input size: Sum of raw dims of all obs EXCEPT "tar_obs"
+        raw_obs_shapes = self.obs_encoder.get_obs_shapes()
+        input_dim = 0
+        target_dim = 0
+        predictor_config = config.get("future_pose_predictor", {})
+        predictor_hidden_dims = predictor_config.get("hidden_dims", [512, 512, 256])
+
+        # Compute the predictor input and target dimensions
+        for key, info in raw_obs_shapes.items():
+            if key == "tar_obs":
+                target_latent_info = self.obs_encoder.get_output_obs_shapes()[key]
+                target_dim = int(np.prod(target_latent_info["shape"]))
+            else:
+                input_dim += int(np.prod(info["shape"]))
+        assert target_dim != 0, "tar_obs not found in observation shapes. Predictor cannot be built."
+
+        
+        self._predictor = obs_encoder.MLPEncoder(
+            input_dim=input_dim,
+            output_dim=target_dim,
+            hidden_dims=predictor_hidden_dims,
+            activation=self._activation
+        )
+        self._predictor.to(self.obs_encoder._device)
+        
+        # lr = predictor_config.get("lr", 1e-4) 
+        # print(f"debug: Future pose predictor learning rate: {lr}")
+        self.predictor_optimizer = torch.optim.Adam(self._predictor.parameters(), lr=1e-4)
+        return
+
+    def train_future_pose_predictor(self, obs):
+        if not hasattr(self, "_predictor") or self._predictor is None:
+            assert False, "Future pose predictor not built."
+        
+        raw_obs_shapes = self.obs_encoder.get_obs_shapes()
+        predictor_input_parts = []
+        target_latent = None
+        
+        with torch.no_grad():
+            for key in raw_obs_shapes:
+                if key == "tar_obs":
+                    target_latent = self.obs_encoder.get_latent(obs, key).detach()
+                else:
+                    raw_part = self.obs_encoder.get_raw_part(obs, key)
+                    predictor_input_parts.append(raw_part)
+        
+        if target_latent is None:
+            assert False, "tar_obs not found in observation shapes. Predictor cannot be evaluated."
+
+        predictor_input = torch.cat(predictor_input_parts, dim=-1)
+        prediction = self._predictor(predictor_input)
+        loss = nn.functional.mse_loss(prediction, target_latent)
+        
+        self.predictor_optimizer.zero_grad()
+        loss.backward()
+        self.predictor_optimizer.step()
+        
+        return {"predictor_loss": loss.detach()}

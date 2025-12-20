@@ -63,6 +63,9 @@ class ObservationEncoder(nn.Module):
     def get_output_obs_shapes(self):
         return self._output_obs_shapes
     
+    def get_obs_shapes(self):
+        return self._obs_shapes
+
     def get_output_dim(self):
         return self._total_output_dim
 
@@ -91,6 +94,16 @@ class ObservationEncoder(nn.Module):
         start, end = self._obs_slices[key]
         part = obs[..., start:end]
         return self._encoders[key](part)
+
+    def get_raw_part(self, obs, key):
+        """
+        Get the raw observation part for a given key without any encoding.
+        """
+        if key not in self._obs_slices:
+            raise KeyError(f"Key '{key}' not found in observation shapes. Available keys: {list(self._obs_slices.keys())}")
+            
+        start, end = self._obs_slices[key]
+        return obs[..., start:end]
 
     def forward(self, obs):
         processed_parts = []

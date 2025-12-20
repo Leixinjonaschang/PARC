@@ -245,7 +245,19 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         for key in self._train_return_tracker._mean_returns:
             info[key] = self._train_return_tracker.get_specific_mean_return(key).item()
         
+        return info
 
+    def _compute_loss(self, batch):
+        info = super()._compute_loss(batch)
+        
+        if "norm_obs" in batch:
+            norm_obs = batch["norm_obs"]
+        else:
+            norm_obs = self._obs_norm.normalize(batch["obs"])
+            
+        predictor_info = self._model.train_future_pose_predictor(norm_obs)
+        info.update(predictor_info)
+        
         return info
     
     def train_model(self, max_samples, out_model_file, int_output_dir, log_file, logger_type):
