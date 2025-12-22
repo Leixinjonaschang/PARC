@@ -15,7 +15,12 @@ import learning.obs_encoder as obs_encoder
 class DMPPOModel(ppo_model.PPOModel):
     def __init__(self, config, env):
         super().__init__(config, env)
+        self._predictor_test_mode = False
         self._build_future_pose_predictor(config)
+        return
+
+    def set_predictor_test_mode(self, enabled: bool):
+        self._predictor_test_mode = enabled
         return
     
     def _build_action_distribution_dm_ViT(self, config, env, in_size):
@@ -99,8 +104,14 @@ class DMPPOModel(ppo_model.PPOModel):
         return super()._build_critic_input_dict(env)
 
     def eval_actor(self, obs):
-        processed_obs = self.obs_encoder(obs)
-        return super().eval_actor(processed_obs)
+        if self._predictor_test_mode:
+            predictor_input = self._get_predictor_input(obs)
+            predicted_latent = self._predictor(predictor_input)
+            processed_obs = self.obs_encoder(obs, overrides={"tar_obs": predicted_latent})
+        else:
+            processed_obs = self.obs_encoder(obs)
+            
+        return super(DMPPOModel, self).eval_actor(processed_obs)
 
     def eval_critic(self, obs):
         processed_obs = self.obs_encoder(obs)
@@ -137,26 +148,25 @@ class DMPPOModel(ppo_model.PPOModel):
         self.predictor_optimizer = torch.optim.Adam(self._predictor.parameters(), lr=1e-4)
         return
 
+    def _get_predictor_input(self, obs):
+        raw_obs_shapes = self.obs_encoder.get_obs_shapes()
+        predictor_input_parts = []
+        
+        for key in raw_obs_shapes:
+            if key != "tar_obs":
+                raw_part = self.obs_encoder.get_raw_part(obs, key)
+                predictor_input_parts.append(raw_part)
+                
+        return torch.cat(predictor_input_parts, dim=-1)
+
     def train_future_pose_predictor(self, obs):
         if not hasattr(self, "_predictor") or self._predictor is None:
             assert False, "Future pose predictor not built."
         
-        raw_obs_shapes = self.obs_encoder.get_obs_shapes()
-        predictor_input_parts = []
-        target_latent = None
-        
         with torch.no_grad():
-            for key in raw_obs_shapes:
-                if key == "tar_obs":
-                    target_latent = self.obs_encoder.get_latent(obs, key).detach()
-                else:
-                    raw_part = self.obs_encoder.get_raw_part(obs, key)
-                    predictor_input_parts.append(raw_part)
+            target_latent = self.obs_encoder.get_latent(obs, "tar_obs").detach()
+            predictor_input = self._get_predictor_input(obs)
         
-        if target_latent is None:
-            assert False, "tar_obs not found in observation shapes. Predictor cannot be evaluated."
-
-        predictor_input = torch.cat(predictor_input_parts, dim=-1)
         prediction = self._predictor(predictor_input)
         loss = nn.functional.mse_loss(prediction, target_latent)
         

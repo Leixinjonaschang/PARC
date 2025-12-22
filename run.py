@@ -116,6 +116,11 @@ def run(rank, num_procs, master_port, args):
     agent_file = args.parse_string("agent_config")
     agent = build_agent(agent_file, env, device)
 
+    # Check for predictor test mode
+    test_predictor = args.parse_bool("test_predictor", False)
+    if test_predictor and hasattr(agent, "set_predictor_test_mode"):
+        print("Enabling Predictor Test Mode: Replacing tar_obs latent with prediction.")
+        agent.set_predictor_test_mode(True)
 
     if (model_file != ""):
         agent.load(model_file)

@@ -105,16 +105,19 @@ class ObservationEncoder(nn.Module):
         start, end = self._obs_slices[key]
         return obs[..., start:end]
 
-    def forward(self, obs):
+    def forward(self, obs, overrides=None):
         processed_parts = []
         
         # We need to iterate in the same order as obs_shapes
         for key in self._obs_shapes:
-            start, end = self._obs_slices[key]
-            part = obs[..., start:end]
-            
-            if key in self._encoders:
-                part = self._encoders[key](part)
+            if overrides is not None and key in overrides:
+                part = overrides[key]
+            else:
+                start, end = self._obs_slices[key]
+                part = obs[..., start:end]
+                
+                if key in self._encoders:
+                    part = self._encoders[key](part)
             
             processed_parts.append(part)
             

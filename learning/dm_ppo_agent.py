@@ -134,6 +134,11 @@ class DMPPOAgent(ppo_agent.PPOAgent):
 
         return
     
+    def set_predictor_test_mode(self, enabled: bool):
+        if hasattr(self._model, "set_predictor_test_mode"):
+            self._model.set_predictor_test_mode(enabled)
+        return
+
     def test_model(self, num_episodes):
         self.eval()
         self.set_mode(base_agent.AgentMode.TEST)
