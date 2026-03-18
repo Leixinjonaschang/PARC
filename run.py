@@ -33,7 +33,8 @@ def load_args(argv):
 
 def build_env(args, num_envs, device, visualize):
     env_file = args.parse_string("env_config")
-    env = env_builder.build_env(env_file, num_envs, device, visualize)
+    debug_visuals = args.parse_bool("debug_visuals", False)
+    env = env_builder.build_env(env_file, num_envs, device, visualize, debug_visuals)
     return env
 
 def build_agent(agent_file, env, device):
