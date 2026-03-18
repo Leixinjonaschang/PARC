@@ -98,7 +98,10 @@ This branch implements **future pose prediction** via teacher-student distillati
 
 The distillation allows the tracker to infer future poses without having actual future target observations - useful for real-time control with latency.
 
-**Teacher**: The `future_pose` encoder encodes target observations (`tar_obs`, `tar_contacts`) into a latent space:
+**Teacher** (`future_pose` encoder): Encodes target observations into a latent space.
+- **Input**: `tar_obs` (1098-dim), `tar_contacts` (216-dim) → concatenated 1314-dim
+- **Output**: 32-dim latent vector
+
 ```yaml
 obs_encoders:
   future_pose:
@@ -108,7 +111,9 @@ obs_encoders:
     input_keys: ["tar_obs", "tar_contacts"]
 ```
 
-**Student**: A predictor MLP that learns to predict the teacher's latent from partial observations (all obs EXCEPT target-related keys).
+**Student** (predictor MLP): Predicts the teacher's latent from partial observations.
+- **Input**: All raw obs EXCEPT `tar_obs` and `tar_contacts` — i.e., `root_rot`(6), `root_vel`(3), `root_ang_vel`(3), `joint_rot`(174), `dof_vel`(29), `key_pos`(15), `char_contacts`(36), `hf`(441), `target_xy`(2), `replan_t`(1)
+- **Output**: 32-dim latent (same space as teacher encoder)
 
 **Training** (`learning/dm_ppo_model.py`):
 - Teacher provides target latent (detached, no gradient)

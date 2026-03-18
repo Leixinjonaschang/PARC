@@ -34,15 +34,6 @@ class ObservationEncoder(nn.Module):
         # Helper mappings
         self._key_to_encoder = {} # input_key -> encoder_name
         self._encoder_input_keys = {} # encoder_name -> [input_keys]
-        
-        # Pre-process config to handle legacy and defaults
-        # Legacy support: if tar_obs latent dim is in root config but not in encoders_cfg
-        if "tar_obs" in self._obs_shapes and "tar_obs_latent_dim" in config and "tar_obs" not in encoders_cfg:
-             encoders_cfg["tar_obs"] = {
-                 "type": "mlp",
-                 "latent_dim": config.get("tar_obs_latent_dim", 32),
-                 "hidden_dims": config.get("tar_obs_hidden_dim", [512, 512, 256])
-             }
 
         # Build Encoders
         for enc_name, cfg in encoders_cfg.items():
