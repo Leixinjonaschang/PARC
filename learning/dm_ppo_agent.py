@@ -43,6 +43,7 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         super()._init_train()
         if self._env._report_tracking_error:
             self._test_tracking_error_tracker.reset()
+        self._enable_predictor_training = self._config.get("future_pose_predictor", {}).get("enabled", True)
         return
 
     def _check_nan(self, tensor, name, exit_on_nan=True):
@@ -254,15 +255,16 @@ class DMPPOAgent(ppo_agent.PPOAgent):
 
     def _compute_loss(self, batch):
         info = super()._compute_loss(batch)
-        
+
         if "norm_obs" in batch:
             norm_obs = batch["norm_obs"]
         else:
             norm_obs = self._obs_norm.normalize(batch["obs"])
-            
-        predictor_info = self._model.train_future_pose_predictor(norm_obs)
-        info.update(predictor_info)
-        
+
+        if self._enable_predictor_training:
+            predictor_info = self._model.train_future_pose_predictor(norm_obs)
+            info.update(predictor_info)
+
         return info
     
     def train_model(self, max_samples, out_model_file, int_output_dir, log_file, logger_type):

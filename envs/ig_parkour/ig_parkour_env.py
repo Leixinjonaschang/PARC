@@ -658,28 +658,26 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
     def _draw_local_hf(self):
         red = [1.0, 0.0, 0.0]
         blue = [0.0, 0.0, 1.0]
-        if self._camera_env_id < self._num_dm_envs:
-            xyz_points = self.get_dm_env()._ray_xyz_points[self._camera_env_id]
-            for i in range(0, xyz_points.shape[0], 1):
-                point = xyz_points[i]
+        
+        # Visualize height samples for all environments
+        # Draw in env 0 because xy_points already has the offsets (global/world coordinates)
+        for env_id in range(self.get_num_envs()):
+            if env_id < self._num_dm_envs:
+                xyz_points = self.get_dm_env()._ray_xyz_points[env_id]
+                for i in range(0, xyz_points.shape[0], 1):
+                    point = xyz_points[i]
+                    self._draw_point(self._envs[0], point, red, size = 0.04)
+            else:
+                mgdm_env_id = env_id - self._num_dm_envs
+                xyz_points = self.get_mgdm_env()._ray_xyz_points[mgdm_env_id]
+                for i in range(0, xyz_points.shape[0], 1):
+                    point = xyz_points[i]
+                    self._draw_point(self._envs[0], point, red, size = 0.04)
 
-                # draw in env 0 because xy_points already has the offsets
-                self._draw_point(self._envs[0], point, red, size = 0.04)
-        else:
-            camera_env_id = self._get_relative_mgdm_env_ids(self._camera_env_id)
-            xyz_points = self.get_mgdm_env()._ray_xyz_points[camera_env_id]
-            for i in range(0, xyz_points.shape[0], 1):
-                point = xyz_points[i]
-
-                # draw in env 0 because xy_points already has the offsets
-                self._draw_point(self._envs[0], point, red, size = 0.04)
-
-            xyz_points = self.get_mgdm_env()._mgdm_xyz_points[camera_env_id]
-            for i in range(0, xyz_points.shape[0], 1):
-                point = xyz_points[i]
-
-                # draw in env 0 because xy_points already has the offsets
-                self._draw_point(self._envs[0], point, blue, size = 0.04)
+                xyz_points = self.get_mgdm_env()._mgdm_xyz_points[mgdm_env_id]
+                for i in range(0, xyz_points.shape[0], 1):
+                    point = xyz_points[i]
+                    self._draw_point(self._envs[0], point, blue, size = 0.04)
         return
     
     def _build_sim_tensors(self, config):
