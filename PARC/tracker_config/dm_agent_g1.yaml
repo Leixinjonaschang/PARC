@@ -25,6 +25,7 @@ model:
       hidden_dims: [512, 512, 256]
       input_keys: ["tar_obs", "tar_contacts"]
   future_pose_predictor:
+    enabled: False
     hidden_dims: [512, 512, 256]
     learning_rate: 1e-4
 norm_adv_clip: 4.0
