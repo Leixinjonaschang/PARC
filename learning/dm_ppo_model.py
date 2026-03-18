@@ -107,7 +107,7 @@ class DMPPOModel(ppo_model.PPOModel):
         if self._predictor_test_mode:
             predictor_input = self._get_predictor_input(obs)
             predicted_latent = self._predictor(predictor_input)
-            processed_obs = self.obs_encoder(obs, overrides={"tar_obs": predicted_latent})
+            processed_obs = self.obs_encoder(obs, overrides={"future_pose": predicted_latent})
         else:
             processed_obs = self.obs_encoder(obs)
             
@@ -118,21 +118,30 @@ class DMPPOModel(ppo_model.PPOModel):
         return super().eval_critic(processed_obs)
 
     def _build_future_pose_predictor(self, config):
-        # Predictor Input size: Sum of raw dims of all obs EXCEPT "tar_obs"
+        # Predictor Input size: Sum of raw dims of all obs EXCEPT keys used by "future_pose" encoder
         raw_obs_shapes = self.obs_encoder.get_obs_shapes()
         input_dim = 0
         target_dim = 0
         predictor_config = config.get("future_pose_predictor", {})
         predictor_hidden_dims = predictor_config.get("hidden_dims", [512, 512, 256])
+        
+        # Keys consumed by the target encoder should not be in the input
+        target_input_keys = set(self.obs_encoder.get_encoder_input_keys("future_pose"))
 
         # Compute the predictor input and target dimensions
         for key, info in raw_obs_shapes.items():
-            if key == "tar_obs":
-                target_latent_info = self.obs_encoder.get_output_obs_shapes()[key]
-                target_dim = int(np.prod(target_latent_info["shape"]))
+            # Check if this raw key is input to the future_pose encoder
+            if key in target_input_keys:
+                continue
             else:
                 input_dim += int(np.prod(info["shape"]))
-        assert target_dim != 0, "tar_obs not found in observation shapes. Predictor cannot be built."
+        
+        # Get target dimension from the encoder output
+        output_shapes = self.obs_encoder.get_output_obs_shapes()
+        if "future_pose" in output_shapes:
+             target_dim = int(np.prod(output_shapes["future_pose"]["shape"]))
+        
+        assert target_dim != 0, "future_pose encoder not found. Predictor cannot be built."
 
         
         self._predictor = obs_encoder.MLPEncoder(
@@ -150,10 +159,11 @@ class DMPPOModel(ppo_model.PPOModel):
 
     def _get_predictor_input(self, obs):
         raw_obs_shapes = self.obs_encoder.get_obs_shapes()
+        target_input_keys = set(self.obs_encoder.get_encoder_input_keys("future_pose"))
         predictor_input_parts = []
         
         for key in raw_obs_shapes:
-            if key != "tar_obs":
+            if key not in target_input_keys:
                 raw_part = self.obs_encoder.get_raw_part(obs, key)
                 predictor_input_parts.append(raw_part)
                 
@@ -164,7 +174,7 @@ class DMPPOModel(ppo_model.PPOModel):
             assert False, "Future pose predictor not built."
         
         with torch.no_grad():
-            target_latent = self.obs_encoder.get_latent(obs, "tar_obs").detach()
+            target_latent = self.obs_encoder.get_latent(obs, "future_pose").detach()
             predictor_input = self._get_predictor_input(obs)
         
         prediction = self._predictor(predictor_input)
