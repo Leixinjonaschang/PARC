@@ -10,14 +10,55 @@ This is a humanoid robot locomotion research project with two main components:
 
 ## Directory Structure
 
-```
+```text
 humanoid_loco/
-├── PARC/           # Core RL training framework (main project)
-├── GMR/            # Motion retargeting to humanoid robots
-├── Data/           # Motion datasets and retargeted data
-├── terrain-generator/  # Terrain generation utilities
-└── tests/          # Test files
+├── GMR/                            # Motion retargeting to humanoid robots.
+├── Data/                           # Motion datasets, retargeted bounds, and SMPL-X exports.
+├── terrain-generator/              # Terrain generation utilities.
+├── tests/                          # Test files and configuration iterations.
+├── PARC/                           # Core project: Physics-based Augmentation with RL
+│   ├── CLAUDE.md                   # AI AGENT ROOT PROMPT: Contains project architecture... READ FIRST.
+│   ├── README.md                   # General project setup, IsaacGym installation instructions.
+│   ├── parc_0_setup_iter.py        # Utility to scaffold config files for a new PARC iteration.
+│   ├── parc_1_train_gen.py         # Stage 1: Train Motion Diffusion Model (MDM).
+│   ├── parc_2_kin_gen.py           # Stage 2: Generate pure kinematic reference motions with MDM.
+│   ├── parc_3_tracker.py           # Stage 3: Train Low-Level Physics Tracker in IsaacGym (PPO).
+│   ├── parc_4_phys_record.py       # Stage 4: Record successful physics-based rollouts.
+│   ├── cvae_training.py            # Standalone CVAE training script (DAgger or standard).
+│   ├── cvae_config/                # CVAE configuration files.
+│   │   └── cvae_g1.yaml            # CVAE hyperparameters for G1 robot.
+│   ├── run.py                      # Underlying RL training execution engine.
+│   │
+│   ├── learning/                   # Core Reinforcement Learning, PPO, and Architectures
+│   │   ├── base_agent.py           # Abstract RL agent base (buffers, reward tracking).
+│   │   ├── ppo_agent.py            # Standard PPO math (Actor/Critic loss, TD-lambda).
+│   │   ├── dm_ppo_agent.py         # Custom DeepMimic-style PPO (with optional CVAE loading).
+│   │   ├── dm_ppo_model.py         # Actor/Critic nets & Future Pose Predictor MLPs.
+│   │   ├── obs_encoder.py          # Modular observation encoders.
+│   │   └── modules/                
+│   │       ├── cvae_skill.py       # Core CVAE module: Encoder, Decoder, Reparameterization.
+│   │       └── mlp_encoder.py      # Utility MLP blocks used by obs_encoder.
+│   │
+│   ├── envs/                       # IsaacGym Simulators, Physics, and Reward Calculation
+│   │   ├── base_env.py             # Base IsaacGym API wrapper.
+│   │   ├── ig_char_env.py          # Computes physical character states (char_obs, forces).
+│   │   └── ig_parkour/                 
+│   │       ├── ig_parkour_env.py   # Stage 3 Env: Computes tracking rewards, stitches states.
+│   │       └── mgdm_dm_util.py     # Heightfield calculations, relative Heightfield raycasting.
+│   │
+│   ├── anim/                       # Kinematics and Reference Data Processors
+│   │   ├── motion_lib.py           # Loads and interpolates raw motion dataset files.
+│   │   └── kin_char_model.py       # Pure kinematic version of the robot.
+│   │
+│   └── diffusion/                  # Motion Diffusion Model (MDM) Implementation
 ```
+
+## Quick Navigation for AI Tasks
+- **CVAE Training**: See `cvae_training.py` and `cvae_config/cvae_g1.yaml`.
+- **CVAE Module**: See `learning/modules/cvae_skill.py`.
+- **Observation Space or Heightfield Issues**: See `envs/ig_parkour/ig_parkour_env.py` and `envs/ig_parkour/mgdm_dm_util.py`.
+- **Policy/Network Architecture Changes**: See `learning/dm_ppo_model.py` and Config `.yaml` files.
+- **Motion Data/Interpolation Bugs**: See `anim/motion_lib.py` and `anim/kin_char_model.py`.
 
 ## PARC (Core Project)
 
@@ -185,3 +226,201 @@ The actor network receives processed observations from the `ObservationEncoder`.
 - `learning/modules/mlp_encoder.py`: MLP encoder module
 - `learning/dm_ppo_model.py`: Predictor training and inference
 - `PARC/tracker_config/dm_agent_g1.yaml`: G1 agent config with predictor settings
+
+
+## Branch: test/cvae_latent
+
+### Implementation Plan (Skill Latent Plan)
+This plan outlines the process of implementing a Conditional Variational Autoencoder (CVAE) for latent skill space construction.
+
+1. Encoder Architecture
+
+The encoder is responsible for mapping the input (robot state, target observations, target contacts, current contacts, and character observations) to a latent skill representation.
+
+Encoder Inputs:
+
+tar_obs: Target observations (future target pose, root position, root rotation, joint rotations for 6 steps).
+
+tar_contacts: Target contact information (contact points of the robot with the environment).
+
+char_obs: Character observations (robot's current state, joint positions, velocities, etc.).
+
+char_contacts: Current contact points or observations regarding interactions with the environment.
+
+Encoder Output:
+
+mu: Mean of the latent distribution.
+
+sigma: Standard deviation of the latent distribution.
+
+Encoder Network Architecture:
+
+Input: Concatenate tar_obs, tar_contacts, char_obs, and char_contacts to form a single input vector.
+
+Hidden Layers:
+
+Layer 1: 1024 units
+
+Layer 2: 1024 units
+
+Layer 3: 512 units
+
+Layer 4: 128 units
+
+Output:
+
+Mean 
+
+μ and Standard Deviation 
+σ of latent distribution.
+
+Latent dimension: 128 
+
+- Input of the decoder:
+ - latent sample from the distribution constructed by mu and sigma (reparameterization trick)
+ - condition:
+  - heading (target_xy)
+  - char_obs
+  - char_contacts
+  - hf
+
+2. Decoder Architecture
+
+The decoder takes the latent variable and reconstructs the output (robot actions). The decoder is conditioned on latent skill and various robot states and environmental data.
+
+Decoder Inputs:
+
+Latent sample: A sample from the latent distribution , generated using the reparameterization trick.
+
+Conditioning information:
+
+heading (target_xy): Target position.
+
+char_obs: Character observations (robot's state).
+
+char_contacts: Character contact information.
+
+hf: Heightfield (terrain information).
+
+Decoder Output:
+
+a_t: The action generated by the robot (e.g., joint angles, velocities).
+
+Decoder Network Architecture:
+
+Input: Concatenate the latent sample z_t
+
+ with the conditioning information: heading (target_xy), char_obs, char_contacts, and hf.
+
+Hidden Layers:
+
+Layer 1: 128 units (for latent skill)
+
+Layer 2: 512 units
+
+Layer 3: 2048 units
+
+Layer 4: 1024 units
+
+Layer 5: 512 units
+
+Output: Action dimension
+
+3. Learnable Prior Network
+
+The learnable prior is modeled as a conditional distribution that depends on the robot's current state (char_obs,hf)
+
+Prior Network Inputs: s_t: Robot's current state (char_obs,hf)
+rior Network Output:
+mu_p(char_obs,hf): Mean of the prior distribution.
+sigma_p(char_obs,hf): Standard deviation of the prior distribution.
+
+Prior Network Architecture:
+Input: Robot state (char_obs,hf)
+Hidden Layers:
+
+Layer 1: 512 units
+
+Layer 2: 256 units
+
+Output: mu_p(char_obs,hf) and sigma_p(char_obs,hf)
+
+4. Reparameterization Trick
+
+To sample from the latent variable distribution, the reparameterization trick is applied to the output of the encoder.
+z_t = \mu + \sigma \cdot \epsilon, \quad \epsilon \sim \mathcal{N}(0, I)
+This allows for backpropagation through the sampling process, enabling end-to-end training.
+
+The loss function for training the CVAE consists of two terms:
+
+Reconstruction Loss:
+This measures the difference between the decoded actions and the real actions:
+L_{\text{recon}} = \mathbb{E}\left[\|a_t - a_t^{\text{real}}\|^2\right]
+
+KL Divergence Loss:
+This regularizes the latent space to ensure the posterior q(z_t | s_t, \tilde s_{t+1}) stays close to the prior p(z_t^p | s_t)
+L_{\text{KL}} = D_{\text{KL}}\left(q(z_t | s_t, \tilde s_{t+1}) \| p(z_t^p | s_t)\right)
+L_{\text{total}} = L_{\text{recon}} + \lambda \cdot L_{\text{KL}}
+
+the original tracker policy is treated as teacher. 
+
+### CVAE Training (Standalone)
+
+CVAE training has been decoupled from tracker training. Use the standalone `cvae_training.py` script to train the CVAE.
+
+**Configuration**: All CVAE settings use the unified `cvae:` namespace.
+
+**CVAE Config** (`PARC/cvae_config/cvae_g1.yaml`):
+```yaml
+cvae:
+  enabled: True
+  latent_dim: 128
+  encoder_hidden_dims: [1024, 1024, 512]
+  decoder_hidden_dims: [512, 2048, 1024, 512]
+  prior_hidden_dims: [512, 256]
+  beta: 0.1
+  learning_rate: 1e-4
+  dagger:
+    enabled: True
+    num_iterations: 10
+    student_rollouts_per_iter: 1000
+    expert_rollouts_per_iter: 100
+    mix_ratio: 0.5
+  teacher_checkpoint:
+    checkpoint_path: "/path/to/tracker.pt"
+
+output_dir: "../tests/parc/cvae_training/"
+save_interval: 10
+```
+
+**Tracker Config** (`PARC/PARC/tracker_config/dm_agent_g1.yaml`):
+```yaml
+# CVAE loads pre-trained weights (no training during tracker training)
+cvae:
+  enabled: True
+  checkpoint: null  # Set path after training CVAE
+  # Architecture params (must match trained model)
+  latent_dim: 128
+  encoder_hidden_dims: [1024, 1024, 512]
+  decoder_hidden_dims: [512, 2048, 1024, 512]
+  prior_hidden_dims: [512, 256]
+  beta: 0.1
+  learning_rate: 1e-4
+```
+
+**Training CVAE:**
+
+```bash
+# 1. Train CVAE (DAgger or standard)
+python PARC/cvae_training.py --config PARC/cvae_config/cvae_g1.yaml
+
+# 2. Set the checkpoint path in dm_agent_g1.yaml, then run tracker training
+# CVAE loads from checkpoint, no training occurs
+python parc_3_tracker.py --config PARC/PARC/tracker_config/dm_agent_g1.yaml
+```
+
+**Key Files:**
+- `PARC/cvae_training.py`: Standalone CVAE training script (DAgger + standard)
+- `PARC/cvae_config/cvae_g1.yaml`: CVAE hyperparameters and training config
+- `learning/modules/cvae_skill.py`: CVAESkillModule class (Encoder, Decoder, Prior) - reads config from `cvae:`
+- `learning/dm_ppo_agent.py`: CVAE loading (no training) during tracker training
