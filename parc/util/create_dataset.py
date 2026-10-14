@@ -16,7 +16,8 @@ import parc.util.terrain_util as terrain_util
 Takes folders of motion data and creates a dataset .yaml file with proporitional sampling weights.
 Motion classes are created based on the first layer of nested folders.
 By default, all motion classes will have the same weighting: 1.0.
-Classes without usable motions (none left after the filters) are skipped with a warning.
+Files without motion data or terrain, and classes without usable motions (none left after the
+filters), are skipped with a warning.
 Optionally also computes processed terrain data (needed for training mdm).
 """
 def _is_skipped_dir(path: Path) -> bool:
@@ -99,6 +100,11 @@ def create_dataset_yaml(
             # load and save with file_io, not file_io_helper, because we want to preserve most of the file contents
             motion_filepath = sorted_motion_files[i]
             file_data = file_io.load_ms_file(str(motion_filepath))
+            # the tracker and the MDM need both; skipped like the empty classes below
+            if file_data.motion_data is None or file_data.terrain_data is None:
+                missing = "motion data" if file_data.motion_data is None else "terrain"
+                warnings.warn("create_dataset: skipping {}, it has no {}".format(motion_filepath, missing))
+                continue
             motion_frames = motion_util.MotionFrames.from_ms_motion_data(file_data.motion_data, device="cpu")
             num_frames = motion_frames.root_pos.shape[0]
             if num_frames < min_num_frames:
