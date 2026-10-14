@@ -57,7 +57,8 @@ class BaseAgent(torch.nn.Module):
         start_time = time.time()
 
         self._curr_obs, self._curr_info = self._env.reset()
-        self._logger = self._build_logger(logger_type, log_file, self._config)
+        # logger_type is unused: logging always goes through wandb (offline when use_wandb is false).
+        self._logger = self._build_logger(log_file)
         self._init_train()
 
         while self._sample_count < max_samples:

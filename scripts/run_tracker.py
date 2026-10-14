@@ -56,13 +56,6 @@ def test(agent, test_episodes):
             Logger.print(key + ": {}".format(result[key]))
     return result
 
-def test2(agent, test_episodes):
-    result = agent.test_model2(num_episodes=test_episodes)
-    Logger.print("Mean Return: {}".format(result["mean_return"]))
-    Logger.print("Mean Episode Length: {}".format(result["mean_ep_len"]))
-    Logger.print("Episodes: {}".format(result["num_eps"]))
-    return result
-
 def create_output_dirs(out_model_file, int_output_dir):
     output_dir = os.path.dirname(out_model_file)
     if (output_dir != "" and (not os.path.exists(output_dir))):
@@ -125,9 +118,6 @@ def run(args):
         test(agent=agent, test_episodes=test_episodes)
     elif (mode == "record"):
         record_dm_motions(agent)
-    elif (mode == "test2"):
-        test_episodes = args.parse_int("test_episodes", np.iinfo(np.int64).max)
-        test2(agent=agent, test_episodes=test_episodes)
     else:
         assert(False), "Unsupported mode: {}".format(mode)
 
