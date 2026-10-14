@@ -27,32 +27,38 @@ PARC is a physics-based character controller using RL. It consists of 4 main tra
 
 ```bash
 # Stage 1: Train motion generator (diffusion model)
-python parc_1_train_gen.py --config path/to/config
+uv run python parc_1_train_gen.py --config path/to/config
 
 # Stage 2: Generate kinematic motions
-python parc_2_kin_gen.py --config path/to/config
+uv run python parc_2_kin_gen.py --config path/to/config
 
 # Stage 3: Train tracking policy
-python parc_3_tracker.py --config path/to/config
+uv run python parc_3_tracker.py --config path/to/config
 
 # Stage 4: Record physics data
-python parc_4_phys_record.py --config path/to/config
+uv run python parc_4_phys_record.py --config path/to/config
 ```
 
 ### Setup for New Iteration
 ```bash
-python parc_0_setup_iter.py
+uv run python parc_0_setup_iter.py
 ```
 
 ### Environment Setup
 
-PARC requires IsaacGym and Python 3.8.19:
+PARC uses [uv](https://docs.astral.sh/uv/) with Python 3.8.20 (`.python-version`). `pyproject.toml` + `uv.lock` are the source of truth; `requirements.txt` and the conda steps in `README.md` are upstream's. Run everything from the repo root:
 ```bash
-conda create -n parc python=3.8.19 -y
-conda activate parc
-pip install -r PARC/requirements.txt
-# Install IsaacGym (download from NVIDIA developer website)
+uv python install     # pinned CPython 3.8.20
+uv sync               # create .venv from uv.lock (torch 1.13.1, CUDA 11.7)
+# IsaacGym Preview 4 (not on PyPI): download from NVIDIA, extract anywhere, link it into .venv
+realpath /path/to/isaacgym/python > .venv/lib/python3.8/site-packages/isaacgym.pth
+uv run python -c "from isaacgym import gymapi, gymtorch; import torch; print('ok')"
+uv run python <script>.py ...   # run scripts via uv run (puts .venv/bin, incl. ninja, on PATH)
+uv add <package>      # add a dependency (updates pyproject.toml and uv.lock)
 ```
+- The `isaacgym.pth` link survives `uv sync`/`uv run`; redo it only if `.venv` is recreated. Don't `uv pip install` IsaacGym: the next `uv sync` uninstalls it.
+- No `LD_LIBRARY_PATH` is needed: uv's Python links `libpython3.8.so.1.0` dynamically. `gymtorch` JIT-compiles on first import (needs `g++`).
+- Import `isaacgym` before `torch` (the entry scripts already do).
 
 ### Key PARC Modules
 
@@ -66,8 +72,8 @@ pip install -r PARC/requirements.txt
 
 ```bash
 # Use Motion Forge (built on Polyscope)
-python PARC/motion_forge.py
-# Edit motionscope/motion_forge_config.yaml with motion_filepath
+uv run python motion_forge.py
+# Edit MOTION_FORGE/motion_forge_config.yaml with motion_filepath
 ```
 
 ## Architecture Summary
