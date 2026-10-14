@@ -1,0 +1,13 @@
+# Stage 3 (tracker training) for the Unitree G1: parc_3_tracker_default.yaml with the G1 env and agent
+# configs (develop's PARC/tracker_default.yaml). scripts/parc_0_setup_iter.py, when given this file as
+# input_tracker_config_path, overwrites output_dir, in_model_file, dataset_file and create_dataset_config.
+env_config: data/configs/tracker_config/dm_env_g1.yaml
+agent_config: "data/configs/tracker_config/dm_agent_g1.yaml"
+output_dir: "$DATA_DIR/tests/parc/april272025/tracker/iter_2/"
+num_envs: 2048
+max_samples: 10000000000
+device: "cuda:0"
+dataset_file: "$DATA_DIR/tests/parc/april272025/kin_gen/iter_2_opt/motions.yaml"
+# develop's value was a humanoid checkpoint, which a G1 agent cannot load
+in_model_file: null
+create_dataset_config: "data/configs/create_dataset_config_g1.yaml"

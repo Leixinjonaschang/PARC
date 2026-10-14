@@ -1,0 +1,8 @@
+# G1 env smoke (e): record motions with the G1 smoke tracker through scripts/parc_4_phys_record.py
+# (runs scripts/run_tracker.py --mode record with one env per dataset motion).
+output_dir: "output/smoke/g1_env/p4_phys_record/"
+device: "cuda:0"
+create_dataset_config: "tests/smoke/g1_env/create_dataset_g1_smoke.yaml"
+model_file: "output/smoke/g1_env/p3_tracker/model.pt"
+env_file: "output/smoke/g1_env/p3_tracker/dm_env.yaml"
+agent_file: "output/smoke/g1_env/p3_tracker/agent_config.yaml"

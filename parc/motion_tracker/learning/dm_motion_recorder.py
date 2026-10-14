@@ -3,10 +3,8 @@ import os
 import re
 import shutil
 
-import numpy as np
 import torch
 
-import parc.util.torch_util as torch_util
 from parc.motion_tracker.learning.base_agent import AgentMode
 
 
@@ -53,6 +51,7 @@ def record_dm_motions(agent):
     env.set_demo_mode(True)
     env.set_rand_root_pos_offset_scale(0.0)
     env._episode_length = 1000.0
+    os.makedirs(env._output_motion_dir, exist_ok=True)
 
     record_obs = True
 
@@ -97,7 +96,7 @@ def record_dm_motions(agent):
         start_time_fraction = possible_start_time_fractions[counter]
 
         for motion_id in range(num_envs):
-            motion_length = (1.0 - start_time_fraction) * env.get_dm_env()._motion_lib.get_motion_length(motion_id).item()
+            motion_length = (1.0 - start_time_fraction) * env.get_dm_env().get_env_motion_length(motion_id).item()
             if motion_length < 2.0:
                 successful_motions[motion_id] = True
         start_time_fraction_tensor = start_time_fraction * torch.ones(size=[num_envs], dtype=torch.float32, device=agent._device)
@@ -131,62 +130,4 @@ def record_dm_motions(agent):
 
     print("Total successfull motions:", sum(num_successful_motions))
     print("Total success rate:", sum(num_successful_motions) / len(successful_motions))
-
-    exit()
-
-    mlib = env.get_dm_env()._motion_lib
-    motion_save_folder_path = "output/_motions/successful_ref_motions/"
-    os.makedirs(motion_save_folder_path, exist_ok=True)
-    for motion_id in range(num_envs):
-        motion_length = mlib._motion_lengths[motion_id].item()
-        start_time_fraction = start_time_fraction_per_motion_id[motion_id]
-        if start_time_fraction is None:
-            continue
-        start_time = start_time_fraction * motion_length
-        fps = mlib._motion_fps[motion_id].item()
-        start_frame = int(np.floor(start_time * fps))
-
-        motion_start_idx = mlib._motion_start_idx[motion_id].item()
-        motion_end_idx = motion_start_idx + mlib._motion_num_frames[motion_id].item()
-        motion_frames = mlib._motion_frames[motion_start_idx + start_frame:motion_end_idx]
-        contact_frames = mlib._frame_contacts[motion_start_idx + start_frame:motion_end_idx]
-        terrain = mlib._terrains[motion_id]
-
-        import parc.util.motion_edit_lib as medit_lib
-        motion_og_name = mlib.get_motion_names()[motion_id]
-        motion_save_path = motion_save_folder_path + motion_og_name + "_success_ref.pkl"
-        medit_lib.save_motion_data(motion_filepath=motion_save_path,
-                                   motion_frames=motion_frames,
-                                   contact_frames=contact_frames,
-                                   terrain=terrain,
-                                   fps=mlib._motion_fps[motion_id].item(),
-                                   loop_mode="CLAMP")
-
-    exit()
-
-    num_augments_per_motion = 2
-    radius = 0.35
-    max_heading_angle_degrees = 35.0
-    max_start_time_fraction = 0.5
-    min_start_time_fraction = 0.0
-    num_envs = env.get_num_envs()
-    for i in range(num_augments_per_motion):
-
-        root_pos_offset = 2.0 * torch.rand(size=[num_envs, 3], dtype=torch.float32, device=agent._device) - 1.0
-        root_pos_offset *= radius
-        root_pos_offset[..., 2] = 0.0
-
-        root_heading_offset = 2.0 * torch.rand(size=[num_envs], dtype=torch.float32, device=agent._device) - 1.0
-        root_heading_offset *= max_heading_angle_degrees * torch.pi / 180.0
-        z_axis = torch.tensor([[0.0, 0.0, 1.0]], dtype=torch.float32, device=agent._device).expand(num_envs, -1)
-        root_rot_offset = torch_util.axis_angle_to_quat(z_axis, root_heading_offset)
-
-        start_time_fraction = torch.rand(size=[num_envs], dtype=torch.float32, device=agent._device) * \
-            (max_start_time_fraction - min_start_time_fraction) + min_start_time_fraction
-
-        env.get_dm_env().set_root_pos_offset(root_pos_offset)
-        env.get_dm_env().set_root_rot_offset(root_rot_offset)
-        env.get_dm_env().set_motion_start_time_fraction(start_time_fraction)
-
-        name_suffix = "_dm_aug" + str(i)
-        record_motions_helper(name_suffix)
+    return

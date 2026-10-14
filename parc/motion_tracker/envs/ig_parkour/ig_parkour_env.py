@@ -1,5 +1,4 @@
 import os
-import pickle
 import time
 from collections import OrderedDict
 
@@ -13,8 +12,10 @@ import parc.motion_tracker.envs.base_env as base_env
 import parc.motion_tracker.envs.ig_char_env as ig_char_env
 import parc.motion_tracker.envs.ig_parkour.dm_env as dm_env
 import parc.motion_tracker.envs.ig_parkour.mgdm_dm_util as mgdm_dm_util
+import parc.util.file_io_helper as file_io_helper
 import parc.util.geom_util as geom_util
 import parc.util.ig_util as ig_util
+import parc.util.motion_util as motion_util
 import parc.util.terrain_util as terrain_util
 import parc.util.torch_util as torch_util
 from parc.util.logger import Logger
@@ -50,12 +51,14 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
 
         self._bypass_record_fail = False
         self._fraction_dm_envs = env_config["fraction_dm_envs"]
+        # the MGDM envs that took the other envs were removed upstream
+        assert(self._fraction_dm_envs == 1.0), \
+            "fraction_dm_envs must be 1.0, got {}".format(self._fraction_dm_envs)
         self._num_dm_envs = min(int(self._fraction_dm_envs * num_envs), num_envs)
 
         self._contact_detection_eps = env_config["contact_detection_eps"]
+        # created when a motion is recorded (save_agent_states_to_file)
         self._output_motion_dir = env_config.get("output_motion_dir", "output/_motions/recorded_motions/")
-        os.makedirs(self._output_motion_dir, exist_ok=True)
-        print("making output motion dir:", self._output_motion_dir)
         self._never_done = env_config.get("never_done", False)
         
         # for deepmimic
@@ -75,6 +78,8 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
             self._contact_weights = torch.tensor(self._contact_weights, dtype=torch.float32, device=device)
 
         self._debug_visuals = env_config["debug_visuals"]
+        if (self._debug_visuals and not visualize):
+            Logger.print("debug_visuals has no effect without visualize")
         self._debug_visual_env_ids = [0, num_envs-1]
         if num_envs > 2:
             self._debug_visual_env_ids.append(1)
@@ -359,7 +364,7 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
                 self.get_dm_env().set_root_rot_offset(heading_quat)
         elif command_str == "motion id":
             new_motion_id = int(input("Input motion id: "))
-            new_motion_id = max(min(new_motion_id, self._dm_env._motion_lib.num_motions() - 1), 0)
+            new_motion_id = max(min(new_motion_id, self._dm_env._mlib.num_motions() - 1), 0)
             print("setting motion id to:", new_motion_id)
             self._dm_env._selected_motion_id = new_motion_id
             self._dm_env._one_motion_mode = True
@@ -391,19 +396,19 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
         lower = gymapi.Vec3(-env_spacing, -env_spacing, 0.0)
         upper = gymapi.Vec3(env_spacing, env_spacing, env_spacing)
         self._env_offsets = torch.zeros(size = (self._num_envs,3), dtype=torch.float32, device=self._device)
-        for i in range(self._num_envs):
-            curr_col = i % num_env_per_row
-            curr_row = i // num_env_per_row
-            self._env_offsets[i, 0] = env_spacing * 2 * curr_col
-            self._env_offsets[i, 1] = env_spacing * 2 * curr_row
 
         for i in range(self._num_envs):
             Logger.print("Building {:d}/{:d} envs".format(i + 1, self._num_envs), end='\r')
             env_ptr = self._gym.create_env(self._sim, lower, upper, num_env_per_row)
+            # Take the offset from IsaacGym: with one env per row (2 or 3 envs) it lays the envs out
+            # along x, not in a column, and the characters would start off their terrains.
+            origin = self._gym.get_env_origin(env_ptr)
+            self._env_offsets[i] = torch.tensor([origin.x, origin.y, origin.z], dtype=torch.float32, device=self._device)
             self._build_env(i, env_ptr, config)
             self._envs.append(env_ptr)
 
         Logger.print("\n")
+        self._check_char_model()
         return
 
     def _build_env(self, env_id, env_ptr, config):
@@ -428,7 +433,7 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
         
         char_handle = self._gym.create_actor(env_ptr, self._char_asset, start_pose, "ref character", col_group, col_filter, segmentation_id)
         
-        dof_prop = self._gym.get_asset_dof_properties(self._char_asset)
+        dof_prop = self._get_char_dof_props()
         dof_prop["driveMode"] = gymapi.DOF_MODE_EFFORT
         dof_prop["stiffness"] = 0.0
         dof_prop["damping"] = 0.0
@@ -533,15 +538,12 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
         return
     
     def _draw_local_hf(self):
+        # Draws the heightfield samples of every DM env. Draw them all in env 0, since the points
+        # already include the env offsets.
         red = [1.0, 0.0, 0.0]
-        blue = [0.0, 0.0, 1.0]
-        if self._camera_env_id < self._num_dm_envs:
-            xyz_points = self.get_dm_env()._ray_xyz_points[self._camera_env_id]
-            for i in range(0, xyz_points.shape[0], 1):
-                point = xyz_points[i]
-
-                # draw in env 0 because xy_points already has the offsets
-                self._draw_point(self._envs[0], point, red, size = 0.04)
+        if self.has_dm_envs():
+            xyz_points = self.get_dm_env()._ray_xyz_points # [num_dm_envs, num_points, 3]
+            self._draw_points(self._envs[0], xyz_points.reshape(-1, 3), red, size = 0.04)
         return
     
     def _build_sim_tensors(self, config):
@@ -696,17 +698,22 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
         return
     
     def save_agent_states_to_file(self, env_id, output_motion_name = None):
-        motion_frames = torch.stack(self._dm_agent_motion[env_id]["frames"])
-        contact_frames = torch.stack(self._dm_agent_motion[env_id]["contacts"])
+        # Writes the recorded states of env_id as an MS file (MotionLib and create_dataset only read those).
+        agent_motion = self._dm_agent_motion[env_id]
+        motion_frames = torch.stack(agent_motion["frames"]) # [root_pos, root_rot exp map, dof], see _get_char_state
+        contact_frames = torch.stack(agent_motion["contacts"])
 
+        obs = None
+        obs_shapes = None
         if self._record_obs:
-            obs = torch.stack(self._dm_agent_motion[env_id]["obs"])
-            self._dm_agent_motion[env_id]["obs"] = obs.cpu().numpy()
+            obs = torch.stack(agent_motion["obs"]).cpu().numpy()
+            obs_shapes = agent_motion["obs_shapes"]
 
         # make sure appropriate root position transforms are applied for dm env
         if env_id < self._num_dm_envs:
             motion_frames[:, 0:2] = self._get_global_xy_pos(motion_frames[:, 0:2], env_id)
 
+        sliced_terrain = None
         if self._use_heightmap:
             # slice a terrain around the current motion, and also localize it so motion starts at origin
             if env_id < self._num_dm_envs:
@@ -718,21 +725,23 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
                 motion_frames[..., 0:3], terrain, padding=padding)
             motion_frames = motion_frames.clone()
             motion_frames[..., 0:3] = localized_root_pos
-            self._dm_agent_motion[env_id]["terrain"] = sliced_terrain.numpy_copy()
 
-        
-        self._dm_agent_motion[env_id]["frames"] = motion_frames.cpu().numpy()
-        self._dm_agent_motion[env_id]["contacts"] = contact_frames.cpu().numpy()
+        frames = motion_util.MotionFrames(root_pos=motion_frames[:, 0:3],
+                                          root_rot=torch_util.exp_map_to_quat(motion_frames[:, 3:6]),
+                                          joint_rot=self._kin_char_model.dof_to_rot(motion_frames[:, 6:]),
+                                          contacts=contact_frames)
 
         if output_motion_name is None:
             output_motion_name = "dm_motion_" + str(env_id).zfill(3)
 
+        os.makedirs(self._output_motion_dir, exist_ok=True)
         output_filepath = os.path.join(self._output_motion_dir, output_motion_name + ".pkl")
-        with open(output_filepath, 'wb') as file:
-            pickle.dump(self._dm_agent_motion[env_id], file)
-            print("wrote motion data to", output_filepath)
+        file_io_helper.save_ms_file(output_filepath, motion_frames=frames, fps=agent_motion["fps"],
+                                    loop_mode=agent_motion["loop_mode"], terrain=sliced_terrain,
+                                    obs=obs, obs_shapes=obs_shapes)
+        print("wrote motion data to", output_filepath)
 
-        print("num frames =", self._dm_agent_motion[env_id]["frames"].shape[0])
+        print("num frames =", motion_frames.shape[0])
         return
     
     def set_write_agent_states_flag(self, val):
@@ -1045,23 +1054,7 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
 
         if self._use_contact_info:
             if self._visualize and self._debug_visuals:
-                # COLOR IN CONTACT OF FOOT
-                high_color = gymapi.Vec3(1.0, 0.0, 0.0)
-                for rb_index in range(15): # TODO: modify for contact rbs
-                    low_color = gymapi.Vec3(1.0, 1.0, 1.0)
-                    force_mag = torch.norm(self._char_contact_forces[self._camera_env_id, rb_index])
-                    color = low_color + (high_color - low_color) * force_mag
-                    self._gym.set_rigid_body_color(self._envs[self._camera_env_id], 
-                                                   self._char_handles[self._camera_env_id], 
-                                                   rb_index, gymapi.MESH_VISUAL_AND_COLLISION, color)
-
-                    # COLOR IN REF FOOT CONTACT (for first env only)
-                    low_color = gymapi.Vec3(0.0, 1.0, 0.0)
-                    contact_value = self._ref_contacts[self._camera_env_id, rb_index]
-                    color = low_color + (high_color - low_color) * contact_value
-                    self._gym.set_rigid_body_color(self._envs[self._camera_env_id], 
-                                                   self._ref_char_handles[self._camera_env_id], 
-                                                   rb_index, gymapi.MESH_VISUAL_AND_COLLISION, color)
+                self._draw_contacts()
         
         if self._report_tracking_error:
             if self.has_dm_envs():
@@ -1093,6 +1086,27 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
                     tar_dof_vel=self._ref_dof_vel
                     )
                 self._info["tracking_error"] = tracking_error
+        return
+
+    def _draw_contacts(self):
+        # Colours the contact bodies of the camera env: the character's by contact force (white, red from
+        # 1 N on), the reference character's by the reference contacts (green, red in contact).
+        env_id = self._camera_env_id
+        env_ptr = self._envs[env_id]
+        body_ids = self._kin_char_model.get_contact_body_ids()
+        force_mag = torch.norm(self._char_contact_forces[env_id, body_ids], dim=-1).clamp(max=1.0).cpu().numpy()
+        ref_contacts = self._ref_contacts[env_id].cpu().numpy()
+
+        high_color = np.array([1.0, 0.0, 0.0])
+        char_low_color = np.array([1.0, 1.0, 1.0])
+        ref_low_color = np.array([0.0, 1.0, 0.0])
+        for i, body_id in enumerate(body_ids.tolist()):
+            char_color = char_low_color + (high_color - char_low_color) * force_mag[i]
+            self._gym.set_rigid_body_color(env_ptr, self._char_handles[env_id], body_id,
+                                           gymapi.MESH_VISUAL_AND_COLLISION, gymapi.Vec3(*char_color))
+            ref_color = ref_low_color + (high_color - ref_low_color) * ref_contacts[i]
+            self._gym.set_rigid_body_color(env_ptr, self._ref_char_handles[env_id], body_id,
+                                           gymapi.MESH_VISUAL_AND_COLLISION, gymapi.Vec3(*ref_color))
         return
 
     def _update_misc(self):

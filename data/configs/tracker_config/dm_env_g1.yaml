@@ -1,0 +1,218 @@
+# Unitree G1 (29 DOF) tracker env: dm_env_default.yaml with develop's G1 settings
+# (PARC/tracker_config/dm_env_g1.yaml). The G1 has 36 bodies: the root, 29 hinge joints and
+# 6 fixed bodies (toes, pelvis_contour_link, head_link, head_mocap, imu_in_torso).
+env:
+  camera_mode: track
+  char_file: data/assets/unitree_g1/g1_mocap_29dof.xml
+  contact_bodies: []
+  contact_detection_eps: 1.0e-05
+  # one weight per contact body (all 36 bodies):
+  # 0 pelvis, 1-7 left leg, 8 pelvis_contour_link, 9-15 right leg, 16-18 waist and torso,
+  # 19-21 head_link, head_mocap, imu_in_torso, 22-28 left arm, 29-35 right arm
+  contact_weights: [5.0,
+                    5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
+                    5.0,
+                    5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
+                    5.0, 5.0, 5.0,
+                    5.0, 5.0, 5.0,
+                    5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0,
+                    5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0]
+  control_freq: 30
+  control_mode: pd
+  # PD gains of the pd control mode. The G1 MJCF has no stiffness or damping. Each joint takes the
+  # first key that is a case-insensitive substring of its name; keys that match no joint keep the
+  # asset's gains. Avoid keys that overlap: parc_3/parc_4 re-save this file with sorted keys.
+  pd_params:
+    stiffness:
+      hip_yaw: 100
+      hip_roll: 100
+      hip_pitch: 100
+      knee: 150
+      ankle: 40
+      waist: 100
+      shoulder: 100
+      elbow: 80
+      wrist: 40
+    damping:
+      hip_yaw: 2
+      hip_roll: 2
+      hip_pitch: 2
+      knee: 4
+      ankle: 2
+      waist: 2
+      shoulder: 2
+      elbow: 2
+      wrist: 1
+  debug_visuals: false
+  demo_mode: false
+  dm:
+    fail_rate_quantiles:
+    - 0.25
+    - 0.5
+    - 0.75
+    - 0.9
+    - 0.95
+    - 0.99
+    heightmap:
+      horizontal_scale: 0.4
+      padding: 0.4
+    min_motion_weight: 0.01
+    has_motion_classes: false
+    motion_classes:
+    - climbing
+    - jumping
+    - mid_climbing
+    - misc_mdm
+    - platform
+    - running
+    - stairs
+    - vaulting
+    - mdm_batch_05
+    motion_file: $DATA_DIR/tests/parc/april272025/kin_gen/iter_2_opt/motions.yaml
+    terrain_build_mode: square
+    terrain_save_path: output/parc/terrain.pkl
+    terrains_per_motion: 1
+  enable_early_termination: true
+  env_spacing: 2.0
+  env_style: square
+  episode_length: 10.0
+  fraction_dm_envs: 1.0
+  global_obs: false
+  global_root_height_obs: false
+  # root pos (3), root rot as an exponential map (3), 29 DOFs
+  init_pose: [0, 0, 0.882416, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0,
+              0, 0, 0, 0, 0]
+  # one weight per joint, i.e. per non-root body (from MimicKit's G1 DeepMimic env)
+  joint_err_w:
+  - 1.0 # left_hip_pitch_link
+  - 1.0 # left_hip_roll_link
+  - 1.0 # left_hip_yaw_link
+  - 0.6 # left_knee_link
+  - 0.5 # left_ankle_pitch_link
+  - 0.5 # left_ankle_roll_link
+  - 0.0 # left_toe_link (fixed)
+  - 0.0 # pelvis_contour_link (fixed)
+  - 1.0 # right_hip_pitch_link
+  - 1.0 # right_hip_roll_link
+  - 1.0 # right_hip_yaw_link
+  - 0.6 # right_knee_link
+  - 0.5 # right_ankle_pitch_link
+  - 0.5 # right_ankle_roll_link
+  - 0.0 # right_toe_link (fixed)
+  - 1.0 # waist_yaw_link
+  - 1.0 # waist_roll_link
+  - 1.0 # torso_link
+  - 0.0 # head_link (fixed)
+  - 0.0 # head_mocap (fixed)
+  - 0.0 # imu_in_torso (fixed)
+  - 1.0 # left_shoulder_pitch_link
+  - 1.0 # left_shoulder_roll_link
+  - 1.0 # left_shoulder_yaw_link
+  - 0.6 # left_elbow_link
+  - 0.5 # left_wrist_roll_link
+  - 0.5 # left_wrist_pitch_link
+  - 0.5 # left_wrist_yaw_link
+  - 1.0 # right_shoulder_pitch_link
+  - 1.0 # right_shoulder_roll_link
+  - 1.0 # right_shoulder_yaw_link
+  - 0.6 # right_elbow_link
+  - 0.5 # right_wrist_roll_link
+  - 0.5 # right_wrist_pitch_link
+  - 0.5 # right_wrist_yaw_link
+  key_bodies: ["left_ankle_roll_link", "right_ankle_roll_link", "head_link", "left_wrist_yaw_link", "right_wrist_yaw_link"]
+  key_pos_w: 0.15
+  max_obs_h: 3.0
+  min_obs_h: -3.0
+  plane:
+    dynamic_friction: 1.0
+    restitution: 0.0
+    static_friction: 1.0
+  pose_termination: true
+  # one distance (m) per non-root body, from the body to its reference relative to the root
+  pose_termination_dist:
+  - 2.0  # left_hip_pitch_link
+  - 2.0  # left_hip_roll_link
+  - 2.0  # left_hip_yaw_link
+  - 2.0  # left_knee_link
+  - 10.0 # left_ankle_pitch_link
+  - 10.0 # left_ankle_roll_link
+  - 10.0 # left_toe_link
+  - 10.0 # pelvis_contour_link
+  - 2.0  # right_hip_pitch_link
+  - 2.0  # right_hip_roll_link
+  - 2.0  # right_hip_yaw_link
+  - 2.0  # right_knee_link
+  - 10.0 # right_ankle_pitch_link
+  - 10.0 # right_ankle_roll_link
+  - 10.0 # right_toe_link
+  - 2.0  # waist_yaw_link
+  - 2.0  # waist_roll_link
+  - 2.0  # torso_link
+  - 2.0  # head_link
+  - 2.0  # head_mocap
+  - 2.0  # imu_in_torso
+  - 2.0  # left_shoulder_pitch_link
+  - 2.0  # left_shoulder_roll_link
+  - 2.0  # left_shoulder_yaw_link
+  - 2.0  # left_elbow_link
+  - 10.0 # left_wrist_roll_link
+  - 10.0 # left_wrist_pitch_link
+  - 10.0 # left_wrist_yaw_link
+  - 2.0  # right_shoulder_pitch_link
+  - 2.0  # right_shoulder_roll_link
+  - 2.0  # right_shoulder_yaw_link
+  - 2.0  # right_elbow_link
+  - 10.0 # right_wrist_roll_link
+  - 10.0 # right_wrist_pitch_link
+  - 10.0 # right_wrist_yaw_link
+  pose_w: 0.5
+  rand_reset: true
+  rand_root_pos_offset_scale: 0.075
+  ray_angle: 0.26179938779
+  ray_dx: 0.05
+  ray_num_left: 3
+  ray_num_right: 3
+  ray_points_ahead: 60
+  ray_points_behind: 2
+  ref_char_offset:
+  - 0.0
+  - 0.0
+  - 0.0
+  root_height_obs: false
+  root_pos_termination_dist: 0.6
+  root_pos_w: 0.15
+  root_rot_termination_angle: 1.309
+  root_vel_w: 0.1
+  sim_freq: 60
+  start_paused: false
+  tar_obs_steps:
+  - 1
+  - 2
+  - 3
+  - 10
+  - 20
+  - 30
+  termination_height: 0.15
+  track_root: true
+  track_root_h: true
+  use_contact_info: true
+  vel_w: 0.1
+  write_agent_states: false
+env_name: ig_parkour
+sim:
+  physx:
+    bounce_threshold_velocity: 0.2
+    contact_offset: 0.02
+    default_buffer_size_multiplier: 10.0
+    max_depenetration_velocity: 10.0
+    num_position_iterations: 4
+    num_threads: 4
+    num_velocity_iterations: 0
+    rest_offset: 0.0
+    solver_type: 1
+  substeps: 2

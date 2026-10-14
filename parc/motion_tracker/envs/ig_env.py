@@ -463,22 +463,24 @@ class IGEnv(base_env.BaseEnv):
     def _draw_point(self, env, pt, color, size=0.01):
         if isinstance(pt, torch.Tensor):
             pt = pt.cpu().detach().numpy()
+        self._draw_points(env, np.reshape(pt, (1, 3)), color, size)
+        return
+
+    def _draw_points(self, env, pts, color, size=0.01):
+        # Draws each of the points pts [n, 3] as a cross of three axis-aligned lines, with one copy
+        # from the GPU and one add_lines call for all of them.
+        if isinstance(pts, torch.Tensor):
+            pts = pts.cpu().detach().numpy()
 
         if isinstance(color, torch.Tensor):
             color = color.cpu().detach().numpy()
 
-        vertices = []
-        for i in range(3):
-            axis = np.zeros(3)
-            axis[i] = size
-            vertices.append(pt)
-            vertices.append(pt + axis)
-            vertices.append(pt)
-            vertices.append(pt - axis)
-
-        vertices = np.array(vertices, dtype=np.float32)
-        colors = np.broadcast_to(color, (6, 3)).astype(np.float32)
-        self._gym.add_lines(self._viewer, env, 6, vertices, colors)
+        pts = np.asarray(pts, dtype=np.float32).reshape(-1, 3)
+        offsets = size * np.eye(3, dtype=np.float32)
+        vertices = np.stack([pts[:, None, :] - offsets, pts[:, None, :] + offsets], axis=2) # [n, 3 axes, 2 ends, 3]
+        num_lines = 3 * pts.shape[0]
+        colors = np.broadcast_to(np.asarray(color, dtype=np.float32), (num_lines, 3))
+        self._gym.add_lines(self._viewer, env, num_lines, vertices.reshape(-1, 3), np.ascontiguousarray(colors))
         return
 
     def _draw_line(self, env, p1, p2, color):
