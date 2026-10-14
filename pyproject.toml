@@ -1,3 +1,53 @@
 [build-system]
 requires = ["setuptools>=61", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "parc"
+version = "0.1.0"
+description = "PARC: Physics-based Augmentation with Reinforcement Learning for Character Controllers"
+readme = "README.md"
+requires-python = ">=3.8,<3.9"
+dependencies = [
+    # From requirements.txt. gym is only used for gym.spaces, so its
+    # [accept-rom-license] extra (Atari ROM download at build time) is dropped.
+    "gym==0.26.2",
+    "matplotlib",
+    "numpy>=1.16.4,<2",
+    "pyyaml>=5.3.1",
+    # PyPI build ships its CUDA 12.1 runtime as nvidia-*-cu12 wheels inside .venv.
+    "torch==2.2.0",
+    "wandb>=0.17.4",
+    "embreex",
+    "trimesh",
+    "polyscope",
+    "send2trash",
+    "py-cpuinfo",
+    "imageio[ffmpeg]",
+    # trimesh's ray_triangle intersector (Motionscope's fallback on non-Intel CPUs) needs rtree.
+    "rtree",
+    # Runtime requirements of IsaacGym Preview 4 (isaacgym/python/setup.py). IsaacGym
+    # itself is not on PyPI and is linked into .venv separately (see README / CLAUDE.md).
+    "torchvision==0.17.0",
+    "scipy>=1.5.0",
+    "pillow",
+    "ninja",
+    # torch.utils.cpp_extension imports setuptools; isaacgym.gymtorch JIT-builds with it.
+    "setuptools",
+]
+
+[project.urls]
+Homepage = "https://github.com/mshoe/PARC"
+
+[project.scripts]
+run-motionscope = "scripts.run_motionscope:main"
+
+[tool.setuptools.packages.find]
+include = ["parc*", "scripts*"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[tool.uv]
+# torch CUDA wheels and IsaacGym are Linux x86_64 only.
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
