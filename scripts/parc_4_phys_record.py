@@ -11,25 +11,29 @@ def record_motions(config):
     device = config["device"]
 
     output_dir = Path(config["output_dir"])
-    
+    os.makedirs(output_dir, exist_ok=True)
+
     model_file_path = Path(config["model_file"])
     agent_config_path = Path(config["agent_file"])
     env_config_path = Path(config["env_file"])
 
+    # The motions to record: built from create_dataset_config when given, otherwise an
+    # existing dataset yaml (dataset_file).
     if "create_dataset_config" in config:
         create_dataset_config = path_loader.load_config(config["create_dataset_config"])
         create_dataset_yaml_from_config(create_dataset_config)
+        dataset_file_path = Path(create_dataset_config["save_path"])
+    else:
+        dataset_file_path = Path(config["dataset_file"])
 
-
-    dataset_file_path = Path(create_dataset_config["save_path"])
     try:
         dataset = yaml.safe_load(dataset_file_path.read_text())
         num_motions = len(dataset["motions"])
         print("num_motions =", num_motions)
         num_envs = num_motions
     except IOError:
-        print("error opening dataset file")
-        exit()
+        print("error opening dataset file:", str(dataset_file_path))
+        sys.exit(1)
 
     try:
         phys_record_env_config = path_loader.load_config(env_config_path)
@@ -40,7 +44,7 @@ def record_motions(config):
         phys_record_env_config_path.write_text(yaml.safe_dump(phys_record_env_config))
     except IOError:
         print("could not find env config path:", str(env_config_path))
-        exit()
+        sys.exit(1)
 
     record_argv = """run.py
 --env_config {0}

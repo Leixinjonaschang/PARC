@@ -1,0 +1,13 @@
+# G1 pipeline smoke, stage 3: a few tracker iterations on the stage-1/2 motions.
+# Needs Lane A's data/configs/tracker_config/dm_env_g1.yaml (and IsaacGym, GPU).
+# parc_0_setup_iter.py writes the stage config from this file and sets output_dir,
+# in_model_file, dataset_file, create_dataset_config and env_config (a copy of the env
+# config with the setup config's char_file).
+env_config: "data/configs/tracker_config/dm_env_g1.yaml"
+agent_config: "data/configs/tracker_config/dm_agent_g1.yaml"
+output_dir: "output/smoke_g1/iter_1/p3_tracker/"
+num_envs: 4
+max_samples: 20000
+device: "cuda:0"
+dataset_file: "output/smoke_g1/iter_1/p3_tracker/motions.yaml"
+in_model_file: null

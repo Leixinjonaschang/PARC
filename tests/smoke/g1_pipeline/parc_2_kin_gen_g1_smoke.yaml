@@ -1,0 +1,118 @@
+# G1 pipeline smoke, stage 2: generate and optimize one motion with the stage-1 MDM.
+# Copy of data/configs/parc_2_kin_gen_g1.yaml; changed keys are marked "# smoke".
+# The loss thresholds are 1e9 because an MDM trained for 4 iterations cannot meet the
+# real ones. parc_0_setup_iter.py writes the stage config from this file and sets
+# mdm_model_path, output_dir, opt.output_dir, opt.char_model, motion_id_offset,
+# num_new_motions, save_name, procgen_mode (BOXES) and first_heading_mode.
+mdm_model_path: "$DATA_DIR/tests/parc/experiment_g1/iter_1/p1_train_gen/checkpoints" # G1 (directory: loads the highest-numbered .ckpt)
+device: "cuda:0" # G1: device of the MDM (new key; defaults to cuda:0 when absent)
+output_dir: "$DATA_DIR/tests/parc/experiment_g1/kin_gen/iter_1/" # G1
+motion_id_offset: 458
+num_new_motions: 1 # smoke
+new_terrain_dim_x: 16
+new_terrain_dim_y: 16
+dx: 0.4
+dy: 0.4
+
+# develop's G1 runs used FILE mode with this terrain (develop PARC/kin_gen_default.yaml);
+# the G1 parc_0 config switches to BOXES.
+procgen_mode: "FILE" # [BOXES, PATHS, STAIRS, FILE]
+input_terrain_path: "$DATA_DIR/Data/parkour_dataset/for_paper/teaser_terrain.pkl"
+first_heading_mode: "auto" # G1: "auto" (face the first path node) or "random"
+use_opt: True
+remove_hesitation: True
+simplify_terrain: True
+save_name: "BOXES"
+only_gen: False
+opt:
+  device: "cuda:0"
+  output_dir: "$DATA_DIR/tests/parc/experiment_g1/kin_gen/iter_1_opt/" # G1
+  char_model: "data/assets/unitree_g1/g1_mocap_29dof.xml" # G1
+  use_wandb: False # smoke
+  num_iters: 10 # smoke
+  step_size: 0.001
+  w_root_pos: 1.0
+  w_root_rot: 10.0
+  w_joint_rot: 1.0
+  w_smoothness: 10.0
+  w_penetration: 1000.0
+  w_contact: 1000.0
+  w_sliding: 10.0
+  w_body_constraints: 1000.0
+  w_jerk: 1000.0
+  max_jerk: 1000.0
+  auto_compute_body_constraints: True
+  char_point_samples:
+    sphere_num_subdivisions: 0
+    box_num_slices: 2
+    box_dim_x: 3
+    box_dim_y: 6
+    capsule_num_circle_points: 4
+    capsule_num_sphere_subdivisions: 0
+    capsule_num_cylinder_slices: 4
+
+astar:
+  max_z_diff: 2.1
+  max_jump_xy_dist: 3.0
+  max_jump_z_diff: 0.5
+  min_jump_z_diff: -1.0
+  w_z: 0.15
+  w_xy: 1.0
+  w_bumpy: 0.0
+  max_bumpy: 0.2
+  uniform_cost_max: 0.5
+  uniform_cost_min: 0.0
+  min_start_end_xy_dist: 5.0
+  max_cost: 1000.0
+
+mdm_path:
+  next_node_lookahead: 7
+  rewind_num_frames: 5
+  end_of_path_buffer: 2
+  max_motion_length: 3.0 # smoke
+  #path_batch_size: 16 # not used in this script
+  mdm_batch_size: 4 # smoke
+  top_k: 2
+  w_target: 2.0
+  w_contact: 0.1
+  w_pen: 0.1
+max_contact_loss: 1.0e+9 # smoke
+max_pen_loss: 1.0e+9 # smoke
+max_total_loss: 1.0e+9 # smoke
+
+mdm_gen:
+  use_prev_state: True
+  use_cfg: True
+  cfg_scale: 0.65
+  strong_hf_guidance: False
+  target_guidance: False
+  hf_collision_guidance: False
+  prev_state_ind_key: True
+  target_condition_key: True
+  use_ddim: True
+  ddim_stride: 5
+
+boxes:
+  num_boxes: 10
+  min_box_h: -2.0
+  max_box_h: 2.0
+  box_max_len: 10
+  box_min_len: 5
+  max_box_angle: 0.0
+  min_box_angle: 0.0
+
+paths:
+  num_terrain_paths: 8
+  maxpool_size: 1
+  path_min_height: -1.6
+  path_max_height: 2.0
+  floor_height: -2.0
+
+stairs:
+  min_stair_start_height: -3.0
+  max_stair_start_height: 1.0
+  min_step_height: 0.15
+  max_step_height: 0.25
+  num_stairs: 4
+  min_stair_thickness: 2.0
+  max_stair_thickness: 8.0

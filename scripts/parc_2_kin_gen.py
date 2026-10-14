@@ -3,7 +3,6 @@ import sys
 import os
 import numpy as np
 import torch
-import pickle
 import yaml
 import enum
 import time
@@ -21,11 +20,13 @@ from parc.motion_synthesis.procgen import astar
 from parc.motion_synthesis.procgen import mdm_path
 from parc.motion_synthesis.motion_opt import motion_optimization as motion_opt
 from parc.util import motion_edit_lib as medit_lib
+from parc.util import file_io
 from parc.util import file_io_helper
 from parc.util import path_loader
+from parc.util import pickle_compat
 
 cpu_device = "cpu"
-cuda_device = "cuda:0"
+cuda_device = "cuda:0" # default for the "device" config key (the MDM's device)
 
 
 class ProcGenMode(enum.Enum):
@@ -67,33 +68,49 @@ def _apply_config_to_settings(settings_cls, config_dict):
     return settings
 
 
-def _load_input_terrains(input_terrain_path):
-    terrains = []
-    paths = []
+def _load_terrain_file(terrain_path):
+    # Returns (terrain, path_nodes or None) on the CPU. Accepts an MS file with terrain
+    # data (e.g. this script's only_gen output) or a legacy {"terrain": SubTerrain,
+    # "path_nodes": ...} pickle (develop's only_gen output, teaser_terrain.pkl).
+    try:
+        file_data = file_io_helper.load_ms_file(str(terrain_path), device=cpu_device)
+    except file_io.MSFileFormatError:
+        # pickle_compat remaps develop-era module paths and loads GPU tensors on the CPU
+        legacy_data = pickle_compat.load(str(terrain_path), map_location=cpu_device)
+        if not (isinstance(legacy_data, dict) and "terrain" in legacy_data):
+            raise ValueError("{}: neither an MS file nor a legacy terrain pickle with a 'terrain' key"
+                             .format(terrain_path))
+        terrain = legacy_data["terrain"]
+        terrain.update_old()
+        terrain.to_torch(cpu_device)
+        path_nodes = legacy_data.get("path_nodes")
+    else:
+        if file_data.terrain_data is None:
+            raise ValueError("{}: MS file has no terrain data".format(terrain_path))
+        terrain = terrain_util.SubTerrain.from_ms_terrain_data(file_data.terrain_data, device=cpu_device)
+        path_nodes = (file_data.misc_data or {}).get(file_io_helper.PATH_NODES_KEY)
 
+    if path_nodes is not None:
+        path_nodes = torch.as_tensor(path_nodes).to(device=cpu_device)
+    return terrain, path_nodes
+
+
+def _load_input_terrains(input_terrain_path):
     suffix = os.path.splitext(input_terrain_path)[1]
     if suffix == ".pkl":
-        with open(input_terrain_path, "rb") as f:
-            terrain_data = pickle.load(f)
-            terrains.append(terrain_data["terrain"])
-            terrains[0].to_torch(cpu_device)
-            path_nodes = terrain_data.get("path_nodes")
-            if path_nodes is not None:
-                path_nodes = path_nodes.to(device=cpu_device)
-            paths.append(path_nodes)
+        terrain_paths = [input_terrain_path]
     elif suffix == ".yaml":
         input_terrains_yaml = path_loader.load_config(input_terrain_path)
-        for curr_terrain_path in input_terrains_yaml["terrains"]:
-            with open(curr_terrain_path, "rb") as f2:
-                terrain_data = pickle.load(f2)
-                terrains.append(terrain_data["terrain"])
-                terrains[-1].to_torch(cpu_device)
-                path_nodes = terrain_data.get("path_nodes")
-                if path_nodes is not None:
-                    path_nodes = path_nodes.to(device=cpu_device)
-                paths.append(path_nodes)
+        terrain_paths = input_terrains_yaml["terrains"]
     else:
         raise AssertionError("Unsupported terrain file format: %s" % suffix)
+
+    terrains = []
+    paths = []
+    for terrain_path in terrain_paths:
+        terrain, path_nodes = _load_terrain_file(terrain_path)
+        terrains.append(terrain)
+        paths.append(path_nodes)
 
     return terrains, paths
 
@@ -102,7 +119,9 @@ def _ensure_dir_with_slash(path):
     os.makedirs(path, exist_ok=True)
     return path if path.endswith("/") else path + "/"
 
-def load_mdm(mdm_path) -> mdm.MDM:
+def load_mdm(mdm_path, device=cuda_device) -> mdm.MDM:
+    # mdm_path: a .ckpt file, or a directory whose highest-numbered .ckpt is loaded.
+    # Generation uses the EMA weights when the checkpoint has them.
 
     resolved_path = path_loader.resolve_path(mdm_path)
 
@@ -127,15 +146,16 @@ def load_mdm(mdm_path) -> mdm.MDM:
         resolved_path = max(number_file_pairs, key=lambda x: x[0])[1]
 
     print("loading path:", resolved_path)
-    ret_mdm = mdm.MDM.load_checkpoint(str(resolved_path), device=cuda_device)
+    ret_mdm = mdm.MDM.load_checkpoint(str(resolved_path), device=device, use_ema_model=True)
     return ret_mdm
 
 def mdm_procgen(config, input_mdm_model = None):
     use_opt = config["use_opt"]
     remove_hesitation = config["remove_hesitation"]
-    max_contact_loss = config["max_contact_loss"]
-    max_pen_loss = config["max_pen_loss"]
-    max_total_loss = config["max_total_loss"]
+    # float(): PyYAML reads exponent notation without a sign (1e9) as a string
+    max_contact_loss = float(config["max_contact_loss"])
+    max_pen_loss = float(config["max_pen_loss"])
+    max_total_loss = float(config["max_total_loss"])
     motion_id_offset = config["motion_id_offset"]
     num_new_motions = config["num_new_motions"]
     new_terrain_dim_x = config["new_terrain_dim_x"]
@@ -162,10 +182,13 @@ def mdm_procgen(config, input_mdm_model = None):
 
     only_gen = config["only_gen"]
 
+    mdm_device = config.get("device", cuda_device)
+    print("MDM device:", mdm_device)
+
     # We can also try using mdm models from different arbitrary checkpoints
     if input_mdm_model is None:
         mdm_model_path = Path(config["mdm_model_path"])
-        mdm_model = load_mdm(mdm_model_path)
+        mdm_model = load_mdm(mdm_model_path, device=mdm_device)
     else:
         mdm_model = input_mdm_model
 
@@ -223,6 +246,11 @@ def mdm_procgen(config, input_mdm_model = None):
             capsule_num_circle_points=capsule_num_circle_points,
             capsule_num_sphere_subdivisons=capsule_num_sphere_subdivisions,
             capsule_num_cylinder_slices=capsule_num_cylinder_slices)
+
+        # The optimization runs on opt_device; the optimized frames are post-processed
+        # (hesitation removal, hf mask, flipping) and saved on the CPU.
+        opt_char_model_cpu = opt_char_model.get_copy(cpu_device)
+        body_points_cpu = [points.to(device=cpu_device) for points in body_points]
 
 
     base_motion_name = save_name if save_name is not None else procgen_mode.name
@@ -410,6 +438,10 @@ def mdm_procgen(config, input_mdm_model = None):
             motion_frames = best_motion_frames[j]
             assert isinstance(motion_frames, motion_util.MotionFrames)
             motion_frames.set_device(cpu_device)
+            # mdm_path returns each motion with a leading batch dim of 1; saving and
+            # the optimization expect [num_frames, ...] (develop squeezed it as well)
+            if len(motion_frames.root_pos.shape) == 3:
+                motion_frames = motion_frames.squeeze(0)
 
             new_motion_name = build_motion_name(motion_id, j)
             save_path = output_folder + new_motion_name + ".pkl"
@@ -421,10 +453,22 @@ def mdm_procgen(config, input_mdm_model = None):
             else:
                 min_point_offset = None
 
+            # the raw generated motion (develop and pre-rewrite upstream saved it too)
+            file_io_helper.save_ms_file(filepath=save_path,
+                                        motion_frames=motion_frames,
+                                        fps=mdm_model._sequence_fps,
+                                        loop_mode="CLAMP",
+                                        terrain=best_motion_terrains[j],
+                                        min_point_offset=min_point_offset,
+                                        path_nodes=path_nodes,
+                                        extra_misc_data=extra_misc_data)
+
             if use_opt:
                 log_file = opt_log_folder_path / ("log_" + new_motion_name + ".txt")
 
+                # the generated terrains are on the MDM's device
                 terrain = best_motion_terrains[j].torch_copy()
+                terrain.set_device(device=opt_device)
                 src_frames = motion_frames.get_copy(new_device=opt_device)
 
                 if auto_compute_body_constraints:
@@ -441,7 +485,7 @@ def mdm_procgen(config, input_mdm_model = None):
                     body_constraints = None
 
                 opt_frames = motion_opt.motion_contact_optimization(
-                    src_frames=src_frames,
+                    src_motion_frames=src_frames,
                     body_points=body_points,
                     terrain=terrain,
                     char_model=opt_char_model,
@@ -466,14 +510,14 @@ def mdm_procgen(config, input_mdm_model = None):
                 opt_frames.set_device(device=cpu_device)
                 terrain.set_device(device=cpu_device)
                 if remove_hesitation:
-                    opt_frames = medit_lib.remove_hesitation_frames(opt_frames, char_model)
+                    opt_frames = medit_lib.remove_hesitation_frames(opt_frames, opt_char_model_cpu)
 
                 opt_save_path = opt_output_folder_path / (new_motion_name + "_opt.pkl")
 
-                hf_mask_inds, terrain = terrain_util.compute_hf_extra_vals(motion_frames=opt_frames, 
+                hf_mask_inds, terrain = terrain_util.compute_hf_extra_vals(motion_frames=opt_frames,
                                                                            terrain=terrain,
-                                                                           char_model=char_model,
-                                                                           char_body_points=body_points)
+                                                                           char_model=opt_char_model_cpu,
+                                                                           char_body_points=body_points_cpu)
 
                 file_io_helper.save_ms_file(filepath=opt_save_path,
                                             motion_frames=opt_frames,
@@ -490,7 +534,7 @@ def mdm_procgen(config, input_mdm_model = None):
                 
                 # also save flipped version
                 opt_flipped_save_path = opt_flipped_output_folder_path / (new_motion_name + "_opt_flipped.pkl")
-                flipped_motion_frames = medit_lib.flip_motion_about_XZ_plane(motion_frames=opt_frames, char_model=opt_char_model)
+                flipped_motion_frames = medit_lib.flip_motion_about_XZ_plane(motion_frames=opt_frames, char_model=opt_char_model_cpu)
                 
                 flipped_terrain = terrain.torch_copy()
                 flipped_terrain.flip_by_XZ_axis()

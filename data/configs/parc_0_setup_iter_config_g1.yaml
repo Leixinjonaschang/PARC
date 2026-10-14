@@ -1,0 +1,39 @@
+# Unitree G1 variant of parc_0_setup_iter_config.yaml (develop parc_0_setup_iter.py).
+# Run with: python -m scripts.parc_0_setup_iter --config data/configs/parc_0_setup_iter_config_g1.yaml
+output_dir: "$DATA_DIR/tests/parc/experiment_g1/iter_1/"
+
+write_train_gen: true
+write_kin_gen: true
+write_tracker: true
+write_phys_record: true
+
+# Optional: one character file for every stage. When set, it replaces the MDM's
+# char_file, kin gen's opt.char_model, the datasets' char_filepath and the tracker
+# env's char_file (parc_0 writes a copy of the env config into p3_tracker/).
+char_file: "data/assets/unitree_g1/g1_mocap_29dof.xml"
+
+##### PARC 1 - TRAIN GEN #####
+input_mdm_config_path: "data/configs/parc_1_train_gen_g1.yaml"
+input_mdm_model_path: null # put path to model here after iteration 1
+input_sampler_stats_path: null # put path to sampler stats file here (used for normalizing samples) after iter 1
+
+input_create_dataset_config_path: "data/configs/create_dataset_config_g1.yaml"
+iter_start_dataset_path: "$DATA_DIR/tests/parc/experiment_g1/iter_1/iter_1_start_motions.yaml"
+# the initial G1 dataset converted to MS files (scripts/convert_legacy_motions.py)
+input_dataset_folder_paths: ["$DATA_DIR/Data/initial_retargeted_g1_processed_ms/"]
+
+##### PARC 2 - KIN GEN #####
+input_kin_gen_config_path: "data/configs/parc_2_kin_gen_g1.yaml"
+kin_gen_num_batches_of_motions: 10 # number of parallel jobs to run
+kin_gen_num_motions_per_batch: 50
+kin_gen_motion_id_offset: 0 # numbering starts from this number
+kin_gen_save_name: "boxes"
+kin_gen_procgen_mode: "BOXES" # "BOXES" or "FILE"
+kin_gen_start_heading_mode: "auto" # "auto" or "random"
+
+##### PARC 3 - TRACKER #####
+input_tracker_config_path: "data/configs/parc_3_tracker_g1.yaml"
+input_tracker_model_path: null # put path to tracker here after iteration 1
+
+##### PARC 4 - PHYS RECORD #####
+input_phys_record_config_path: "data/configs/parc_4_phys_record_default.yaml"

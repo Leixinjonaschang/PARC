@@ -1,3 +1,4 @@
+import warnings
 from pathlib import Path
 from typing import List
 
@@ -15,8 +16,15 @@ import parc.util.terrain_util as terrain_util
 Takes folders of motion data and creates a dataset .yaml file with proporitional sampling weights.
 Motion classes are created based on the first layer of nested folders.
 By default, all motion classes will have the same weighting: 1.0.
+Classes without usable motions (none left after the filters) are skipped with a warning.
 Optionally also computes processed terrain data (needed for training mdm).
 """
+def _is_skipped_dir(path: Path) -> bool:
+    # "ignore" anywhere in the path (e.g. kin gen's ignore/raw/ output) and the log/
+    # folders of the motion optimization (text logs, no motions)
+    return "ignore" in str(path) or path.name == "log"
+
+
 def create_dataset_yaml(
     folder_paths: List[Path],
     save_path: Path,
@@ -36,25 +44,21 @@ def create_dataset_yaml(
         folder_names = sorted([p for p in folder_path.iterdir() if p.is_dir()])
         
         for folder in folder_names:
-            if "ignore" in str(folder):
+            if _is_skipped_dir(folder):
+                continue
+            # same-named folders under different folder_paths are one class (motions are
+            # matched to classes by folder name); listing it twice duplicated its motions
+            if folder.name in motion_class_proportions:
                 continue
             motion_classes.append(folder.name)
             motion_class_proportions[folder.name] = 1.0
     print("MOTION CLASSES:")
     print(motion_classes)
 
-
-
-    motion_class_proportions_sum = 0.0
-    for key, val in motion_class_proportions.items():
-        motion_class_proportions_sum += val
-
-        assert key in motion_classes
-
     # collect all ".pkl" files in a folder (and subfolders) recursively
     dirs = []
     for folder_path in folder_paths:
-        dirs.extend([p for p in folder_path.rglob("*") if (p.is_dir() and "ignore" not in str(p))])
+        dirs.extend([p for p in folder_path.rglob("*") if (p.is_dir() and not _is_skipped_dir(p))])
 
     motions_dict = dict()
     motion_class_lengths = dict()
@@ -136,6 +140,19 @@ def create_dataset_yaml(
 
             file_io.save_ms_file(data=file_data, filepath=str(motion_filepath))
 
+    # A class can end up empty (no .pkl files, or all of them filtered out above).
+    # It would get a zero sampling fraction, so skip it, as develop did (342741a).
+    for m_class in motion_classes:
+        if motion_class_lengths[m_class] <= 0.0:
+            warnings.warn("create_dataset: motion class '{}' has no usable motions, skipping it".format(m_class))
+    motion_classes = [m_class for m_class in motion_classes if motion_class_lengths[m_class] > 0.0]
+    if len(motion_classes) == 0:
+        raise ValueError("create_dataset: no usable motions in {}".format([str(p) for p in folder_paths]))
+
+    motion_class_proportions_sum = 0.0
+    for m_class in motion_classes:
+        motion_class_proportions_sum += motion_class_proportions[m_class]
+
     total_length = 0.0
     for m_class in motion_classes:
         total_length += motion_class_lengths[m_class]
@@ -144,7 +161,6 @@ def create_dataset_yaml(
 
     for m_class in motion_classes:
         print(m_class, "total length:", motion_class_lengths[m_class])
-        assert motion_class_lengths[m_class] > 0.0, m_class + " length is: " + motion_class_lengths[m_class]
 
         fraction = motion_class_lengths[m_class] / total_length
         print(m_class, "fraction:", fraction)
@@ -165,6 +181,7 @@ def create_dataset_yaml(
 
     motion_yaml = {"motions": motion_yaml}
 
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     save_path.write_text(yaml.dump(motion_yaml))
 
 def create_dataset_yaml_from_config(config):

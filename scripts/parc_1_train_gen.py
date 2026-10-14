@@ -20,12 +20,59 @@ import pickle
 from pathlib import Path
 from parc.util.create_dataset import create_dataset_yaml_from_config
 from parc.util import path_loader
+from parc.util import pickle_compat
 import time
 
 import faulthandler, sys
 faulthandler.enable(file=sys.stderr, all_threads=True)
 
 
+def sampler_rebuild_reason(motion_sampler, device):
+    """Return why a cached sampler cannot be reused on `device`, or None if it can.
+
+    The sampler pickle caches a MotionLib and a KinCharModel built on the sampler's
+    device; unpickling with map_location only moves the tensors, not that state.
+    """
+    sampler_device = getattr(motion_sampler, "_device", None)
+    if str(sampler_device) != str(device):
+        return "it was built on device {} but the config device is {}".format(sampler_device, device)
+    return None
+
+
+def load_or_create_sampler(config):
+    # Since loading the sampler can be pretty slow, it is cached in sampler_save_filepath
+    sampler_file_path = Path(config["sampler_save_filepath"])
+    sampler_save_dir = sampler_file_path.parent
+    print("making new directory:", sampler_save_dir)
+    os.makedirs(sampler_save_dir, exist_ok=True)
+
+    device = config["device"]
+    motion_sampler = None
+    if sampler_file_path.is_file():
+        print("loading sampler: ", sampler_file_path)
+        load_start_time = time.time()
+        try:
+            # map_location: the cache may come from a GPU this machine does not have
+            motion_sampler = pickle_compat.load(sampler_file_path, map_location=device)
+        except Exception as exc:
+            print("could not load sampler ({}: {}), rebuilding it".format(type(exc).__name__, exc))
+        else:
+            load_end_time = time.time()
+            print("loading sampler took:", load_end_time - load_start_time, "seconds.")
+            reason = sampler_rebuild_reason(motion_sampler, device)
+            if reason is not None:
+                print("rebuilding sampler:", reason)
+                motion_sampler = None
+
+    if motion_sampler is None:
+        print("creating sampler: ", sampler_file_path)
+        create_start_time = time.time()
+        motion_sampler = MDMHeightfieldContactMotionSampler(cfg=config)
+        create_end_time = time.time()
+        print("creating sampler took:", create_end_time - create_start_time, "seconds.")
+        sampler_file_path.write_bytes(pickle.dumps(motion_sampler))
+
+    return motion_sampler
 
 
 def train_mdm(config, input_mdm=None):
@@ -35,29 +82,8 @@ def train_mdm(config, input_mdm=None):
         create_dataset_config = path_loader.load_config(config["create_dataset_config"])
         create_dataset_yaml_from_config(create_dataset_config)
 
-    # Since loading the sampler can be pretty slow
-    sampler_file_path = Path(config["sampler_save_filepath"])
-    try:
-        sampler_save_dir = sampler_file_path.parent
-        print("making new directory:", sampler_save_dir)
-        os.makedirs(sampler_save_dir, exist_ok=True)
-    except:
-        print("could not make directory")
+    motion_sampler = load_or_create_sampler(config)
 
-    if sampler_file_path.is_file():
-        print("loading sampler: ", sampler_file_path)
-        load_start_time = time.time()
-        motion_sampler = pickle.load(sampler_file_path.open("rb"))
-        load_end_time = time.time()
-        print("loading sampler took:", load_end_time - load_start_time, "seconds.")
-    else:
-        print("creating sampler: ", sampler_file_path)
-        create_start_time = time.time()
-        motion_sampler = MDMHeightfieldContactMotionSampler(cfg=config)
-        create_end_time = time.time()
-        print("creating sampler took:", create_end_time - create_start_time, "seconds.")
-        sampler_file_path.write_bytes(pickle.dumps(motion_sampler))
-    
     config['seq_len'] = motion_sampler.get_seq_len()
 
     if input_mdm is None:
@@ -102,7 +128,8 @@ def train_mdm(config, input_mdm=None):
             mode = 'offline'
         )
     
-    diffusion_model.train(motion_sampler, checkpoint_dir, stats_filepath=config["sampler_stats_filepath"])
+    # Without sampler_stats_filepath, MDM.compute_stats uses <sampler_save_filepath stem>_stats.txt
+    diffusion_model.train(motion_sampler, checkpoint_dir, stats_filepath=config.get("sampler_stats_filepath"))
 
 
     output_model_path = output_dir / "final_model.ckpt"

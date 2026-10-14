@@ -1,0 +1,38 @@
+# G1 pipeline smoke, stage 0: write the stage configs for one tiny G1 iteration.
+# Copy of data/configs/parc_0_setup_iter_config_g1.yaml with repo-relative output paths
+# under output/smoke_g1/, the synthetic G1 motions as the initial dataset, the smoke
+# stage configs, and one kin gen batch of one motion.
+output_dir: "output/smoke_g1/iter_1/"
+
+write_train_gen: true
+write_kin_gen: true
+write_tracker: true
+write_phys_record: true
+
+char_file: "data/assets/unitree_g1/g1_mocap_29dof.xml"
+
+##### PARC 1 - TRAIN GEN #####
+input_mdm_config_path: "tests/smoke/g1_pipeline/parc_1_train_gen_g1_smoke.yaml"
+input_mdm_model_path: null
+input_sampler_stats_path: null
+
+input_create_dataset_config_path: "data/configs/create_dataset_config_g1.yaml"
+iter_start_dataset_path: "output/smoke_g1/iter_1/iter_1_start_motions.yaml"
+# synthetic G1 motions (tests/fixtures/pipeline_g1_synthetic.py), see README.md
+input_dataset_folder_paths: ["output/smoke_g1/motions/"]
+
+##### PARC 2 - KIN GEN #####
+input_kin_gen_config_path: "tests/smoke/g1_pipeline/parc_2_kin_gen_g1_smoke.yaml"
+kin_gen_num_batches_of_motions: 1
+kin_gen_num_motions_per_batch: 1
+kin_gen_motion_id_offset: 0
+kin_gen_save_name: "boxes"
+kin_gen_procgen_mode: "BOXES"
+kin_gen_start_heading_mode: "auto"
+
+##### PARC 3 - TRACKER #####
+input_tracker_config_path: "tests/smoke/g1_pipeline/parc_3_tracker_g1_smoke.yaml"
+input_tracker_model_path: null
+
+##### PARC 4 - PHYS RECORD #####
+input_phys_record_config_path: "data/configs/parc_4_phys_record_default.yaml"
