@@ -1,10 +1,14 @@
+"""Build a dataset yaml (motion files with sampling weights) from a create_dataset config.
+
+    python -m scripts.create_dataset_yaml --config data/configs/create_dataset_config_g1.yaml
+
+See parc/util/create_dataset.py for the config keys. With compute_preprocessing_data,
+every motion file read is re-saved in place with its heightfield mask data.
+"""
+import argparse
 import os
 import sys
 from pathlib import Path
-
-import torch
-
-
 
 # Ensure the repository root is on the import path so "parc" resolves consistently
 # across platforms (editable installs on Windows sometimes fail to place the repo
@@ -15,17 +19,26 @@ if str(repo_root) not in sys.path:
 
 import parc.util.create_dataset as create_dataset
 import parc.util.path_loader as path_loader
-folder_path = [path_loader.resolve_path(Path("$DATA_DIR/releases_parc/dec_release/rerun_april272025_iter_2_boxes/"))]
 
-create_dataset.create_dataset_yaml(
-    folder_paths=folder_path,
-    save_path=Path("output/datasets/rerun_april272025_iter_2_boxes.yaml"),
-    char_filepath="data/assets/humanoid.xml",
-    compute_preprocessing_data=False,
-    override_old_hf_mask_inds=False,
-    cut_some_classes_in_half=False,
-    motion_classes_to_cut_in_half=[],
-    max_terrain_dim_x=64,
-    max_terrain_dim_y=64,
-    min_num_frames=15
-)
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Build a dataset yaml from folders of motion files.")
+    parser.add_argument("--config", default="data/configs/create_dataset_config.yaml",
+                        help="create_dataset config yaml (default: %(default)s)")
+    cfg_path = parser.parse_args(argv).config
+    print("loading create dataset config from", cfg_path)
+
+    try:
+        config = path_loader.load_config(cfg_path)
+    except (IOError, AssertionError) as exc:
+        print("error opening file:", cfg_path)
+        print(exc)
+        print("Current working directory:", os.getcwd())
+        return 1
+
+    create_dataset.create_dataset_yaml_from_config(config)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
