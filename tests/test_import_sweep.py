@@ -26,14 +26,6 @@ SWEEP_TIMEOUT_S = 900  # first run may JIT-build gymtorch
 
 # Modules that do real work when imported, so importing them is not a static check.
 SKIP_MODULES = {
-    # Builds a dataset yaml from hard-coded $DATA_DIR/releases_parc folders.
-    "scripts.create_dataset_yaml",
-    # Loads a hard-coded dataset into a MotionLib and analyses it.
-    "scripts.find_interesting_motions",
-    # Loads data/motion_terrains/sfu.pkl and prints its contents.
-    "scripts.read_motion_data",
-    # Loads ../Data/parkour_dataset/pre_auto_aug_dataset.yaml into a MotionLib.
-    "scripts.motion_tests.compute_stats",
     # MotionScope entry point: imports global_header (see below) and builds the GUI.
     "scripts.run_motionscope",
     # MotionScope GUI. global_header reads motionscope_config.yaml, loads motions and
