@@ -18,7 +18,7 @@ class Optimizer():
         
         if "model" in kwargs:
             max_norm = kwargs["max_norm"]
-            grad_norm = torch.nn.utils.clip_grad.clip_grad_norm(kwargs["model"].parameters(), max_norm, 2)
+            grad_norm = torch.nn.utils.clip_grad_norm_(kwargs["model"].parameters(), max_norm, 2)
             if grad_norm.item() > max_norm:
                 print("clipped grad norm:", grad_norm.item())
 
