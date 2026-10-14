@@ -1,6 +1,6 @@
 env:
   camera_mode: track
-  char_file: parc/data/assets/humanoid.xml
+  char_file: data/assets/humanoid.xml
   contact_bodies: []
   contact_detection_eps: 1.0e-05
   contact_weights:
@@ -85,9 +85,9 @@ env:
     - TEASER_TERRAIN_017
     - TEASER_TERRAIN_018
     - TEASER_TERRAIN_019
-    motion_file: data/terrains/civilization_motions.yaml
+    motion_file: data/motion_terrains/civilization_motions.yaml
     terrain_build_mode: file
-    #terrain_save_path: data/terrains/civilization_ig.pkl
+    #terrain_save_path: data/motion_terrains/civilization_ig.pkl
     terrains_per_motion: 1
   enable_early_termination: true
   enable_replan_timer_obs: true

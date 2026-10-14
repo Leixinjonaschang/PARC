@@ -81,7 +81,7 @@ def compute_csv_row(motion_dir_path):
     compute_geom_losses = True
     max_jerk = 11666.3906 #10000.0
 
-    char_model_path = "parc/data/assets/humanoid.xml"
+    char_model_path = "data/assets/humanoid.xml"
     device = "cuda:0"
     char_model = kin_char_model.KinCharModel(device)
     char_model.load_char_file(char_model_path)

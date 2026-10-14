@@ -119,7 +119,7 @@ if __name__ == "__main__":
         cfg_path = Path(sys.argv[2])
         print("loading mdm training config from", cfg_path)
     else:
-        cfg_path = Path("data/configs/parc_1_train_gen.yaml")
+        cfg_path = Path("data/configs/parc_1_train_gen_default.yaml")
         print("NO CONFIG PASSED - LOADING DEFAULT CONFIG:", cfg_path)
 
     try:
