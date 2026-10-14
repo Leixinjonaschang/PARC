@@ -109,6 +109,16 @@ def run(args):
     if (model_file != ""):
         agent.load(path_loader.resolve_path(model_file))
 
+    test_predictor = args.parse_bool("test_predictor", False)
+    if (test_predictor):
+        # The actor uses the future-pose predictor's latent instead of the encoder's.
+        if (mode == "train"):
+            raise ValueError("--test_predictor is only supported in test and record modes.")
+        if (not hasattr(agent, "set_predictor_test_mode")):
+            raise ValueError("--test_predictor needs an agent config with obs_encoders and a future-pose predictor.")
+        Logger.print("Predictor test mode: the actor uses the predicted future-pose latent.")
+        agent.set_predictor_test_mode(True)
+
     if (mode == "train"):
         max_samples = args.parse_int("max_samples", np.iinfo(np.int64).max)
         train(agent=agent, max_samples=max_samples, out_model_file=out_model_file,
