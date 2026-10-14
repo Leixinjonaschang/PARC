@@ -5,8 +5,10 @@ import parc.util.path_loader as path_loader
 from parc.util.logger import Logger
 
 
-def build_env(env_file, num_envs, device, visualize):
+def build_env(env_file, num_envs, device, visualize, debug_visuals=False):
     env_config = path_loader.load_config(path_loader.resolve_path(env_file))
+    if (debug_visuals):
+        env_config["env"]["debug_visuals"] = True
 
     env_name = env_config["env_name"]
     Logger.print("Building {} env".format(env_name))

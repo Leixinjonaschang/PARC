@@ -75,6 +75,8 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
             self._contact_weights = torch.tensor(self._contact_weights, dtype=torch.float32, device=device)
 
         self._debug_visuals = env_config["debug_visuals"]
+        if (self._debug_visuals and not visualize):
+            Logger.print("debug_visuals has no effect without visualize")
         self._debug_visual_env_ids = [0, num_envs-1]
         if num_envs > 2:
             self._debug_visual_env_ids.append(1)
@@ -534,15 +536,12 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
         return
     
     def _draw_local_hf(self):
+        # Draws the heightfield samples of every DM env. Draw them all in env 0, since the points
+        # already include the env offsets.
         red = [1.0, 0.0, 0.0]
-        blue = [0.0, 0.0, 1.0]
-        if self._camera_env_id < self._num_dm_envs:
-            xyz_points = self.get_dm_env()._ray_xyz_points[self._camera_env_id]
-            for i in range(0, xyz_points.shape[0], 1):
-                point = xyz_points[i]
-
-                # draw in env 0 because xy_points already has the offsets
-                self._draw_point(self._envs[0], point, red, size = 0.04)
+        if self.has_dm_envs():
+            xyz_points = self.get_dm_env()._ray_xyz_points # [num_dm_envs, num_points, 3]
+            self._draw_points(self._envs[0], xyz_points.reshape(-1, 3), red, size = 0.04)
         return
     
     def _build_sim_tensors(self, config):
