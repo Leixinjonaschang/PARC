@@ -20,6 +20,15 @@ so when several worktrees run IsaacGym at once, give each its own
 
 Reference times are from an L40S (2026-10-14).
 
+The G1 smoke tests have their own READMEs:
+
+- [`g1_env/README.md`](g1_env/README.md): the G1 tracker env (build, observations, PD gains), training
+  with the future-pose agent, test, record and debug visuals, plus a humanoid env regression check.
+- [`g1_pipeline/README.md`](g1_pipeline/README.md): G1 stages 0 to 2 (setup, MDM, kinematic
+  generation) and humanoid stages 1 and 2.
+- [`g1_e2e/README.md`](g1_e2e/README.md): one G1 iteration end to end, stages 0 to 4 and the
+  dataset of the produced motions, run by `run_g1_e2e.py`.
+
 ## S0 Static checks
 
 ```bash
@@ -43,9 +52,10 @@ Expect `1 8.433...` (254 frames at 30 fps).
 ## S4 Build a dataset yaml
 
 `create_dataset` re-saves every motion file it reads, so it runs on copies.
-`sfu.pkl` is left out: it has exactly 15 frames, which the MDM sampler rejects,
-and dropping it with `min_num_frames: 16` would leave an empty class, which
-crashes `create_dataset`.
+`sfu.pkl` is left out: it has exactly 15 frames, which the MDM sampler rejects.
+`min_num_frames: 16` drops it, and a class left without motions is skipped with a
+warning (`motion class 'sfu' has no usable motions, skipping it`), so adding it changes
+nothing. Files without terrain or motion data are skipped with a warning as well.
 
 ```bash
 mkdir -p output/smoke/motions/civilization output/smoke/motions/teaser
@@ -69,7 +79,8 @@ uv run python -m scripts.parc_3_tracker --config tests/smoke/parc_3_tracker_smok
 64 envs, 201 iterations, about 7 minutes. Expect `output/smoke/p3_tracker/`
 with `dm_env.yaml`, `agent_config.yaml`, `log.txt`, `model.pt` and
 `checkpoints/model_0000000{000,200}.pt`. Reference: Test_Return 3.94, 5.10, 5.85
-at iterations 0, 100, 200.
+at iterations 0, 100, 200 (a P3 re-run on develop_migration with all lanes merged:
+3.67, 5.54, 6.24 in 7.4 minutes).
 
 ## S6 Test the trained tracker
 
@@ -82,23 +93,24 @@ uv run python -m scripts.run_tracker --mode test --visualize False --num_envs 16
   --model_file output/smoke/p3_tracker/model.pt
 ```
 
-About 15 s. Reference: Mean Return 6.2 over 48 episodes.
+About 15 s. Reference: Mean Return 6.2 over 48 episodes (P3 re-run: 7.2 over 39).
 
 ## S7 Record motions (stage 4)
 
-`parc_4_phys_record.py` writes `record_env.yaml` before it creates `output_dir`,
-so create the directory first. Without it the script prints a misleading
-"could not find env config path" and exits with status 0.
-
 ```bash
-mkdir -p output/smoke/p4_phys_record
 uv run python -m scripts.parc_4_phys_record --config tests/smoke/parc_4_phys_record_smoke.yaml
 ```
 
-Known failure on this branch: when a motion fails the first recording pass (all
-of them do with the S5 policy), the retry loop raises
-`AttributeError: 'DeepMimicEnv' object has no attribute '_motion_lib'`
-(`parc/motion_tracker/learning/dm_motion_recorder.py:100`; the attribute is now `_mlib`).
+About 25 s, exit status 0. parc_4 rebuilds `output/smoke/motions.yaml` and records one
+env per motion (4) into `output/smoke/p4_phys_record/recorded_motions/`. Motions that
+fail the first pass are retried from later start times (fractions 0.1 to 0.5) until the
+rest of the motion is shorter than 2 s. The S5 policy tracks none of the 4 motions to
+their end: `failed to track motion` in every pass, `Total successfull motions: 0`, and
+`recorded_motions/` stays empty. Recorded motions are MS files named `<motion>_dm.pkl`
+with the observations in `misc_data["obs"]` and `misc_data["obs_shapes"]`; names with a
+number (`dec2024_teaser_717_...`) are moved into folders of 50 (`dec2024_teaser_700_749/`).
+MotionScope shows the humanoid's recorded obs (Obs GUI). The G1 equivalents are in
+`g1_env/README.md` (step 6) and `g1_e2e/README.md`.
 
 ## S8 Train the MDM (stage 1)
 

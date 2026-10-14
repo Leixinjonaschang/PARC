@@ -40,14 +40,8 @@ grep -rn "char_file\|char_model\|char_filepath" output/smoke_g1/iter_1 --include
 
 The config sets `char_file`, so parc_0 writes the G1 xml into the MDM config, kin gen's
 `opt.char_model`, the three dataset configs, and `p3_tracker/input_dm_env.yaml` (a copy
-of the tracker env config that `p3_tracker/tracker.yaml` points to).
-
-This needs Lane A's `data/configs/tracker_config/dm_env_g1.yaml`. Without it, parc_0
-writes the stage 1 and 2 configs and then fails with
-`AssertionError: Config file does not exist: data/configs/tracker_config/dm_env_g1.yaml`.
-To run stages 0 to 2 before Lane A is merged, use a copy of the config with
-`input_tracker_config_path: "tests/smoke/parc_3_tracker_smoke.yaml"` (the humanoid
-tracker; stage 3 is not run then).
+of `data/configs/tracker_config/dm_env_g1.yaml`, in the same key order, that
+`p3_tracker/tracker.yaml` points to).
 
 ## G1 stage 1: train the MDM
 
@@ -89,9 +83,11 @@ Expect `p3_tracker/motions.yaml` with 10 motions in the classes step, walk and
 boxes_0_0 (`ignore/` and `log/` are skipped), and `p4_phys_record/motions.yaml` with
 the 4 generated motions.
 
-## G1 stages 3 and 4 (after Lane A is merged)
+## G1 stages 3 and 4
 
-Not run in Lane C1: they need the G1 tracker env.
+`tests/smoke/g1_e2e/` runs stages 0 to 4 end to end on the same layout, with 32 envs for
+stage 3, and checks every output; see its README for the expected output. With this
+README's configs:
 
 ```bash
 uv run python -m scripts.parc_3_tracker --config output/smoke_g1/iter_1/p3_tracker/tracker.yaml
