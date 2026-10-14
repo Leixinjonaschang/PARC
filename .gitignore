@@ -13,3 +13,4 @@ output*/
 imgui.ini
 data/assets/smplx/*
 *.DS_store
+.venv/
