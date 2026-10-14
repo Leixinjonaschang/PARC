@@ -1,0 +1,43 @@
+[project]
+name = "parc"
+version = "0.1.0"
+description = "PARC: Physics-based Augmentation with Reinforcement Learning for Character Controllers (Unitree G1 fork)"
+requires-python = ">=3.8,<3.9"
+dependencies = [
+    # From requirements.txt. gym is only used for gym.spaces, so its
+    # [accept-rom-license] extra (Atari ROM download at build time) is dropped.
+    "gym==0.26.2",
+    "matplotlib",
+    "numpy>=1.16.4,<2",
+    # Not imported by PARC, but gym imports cv2 if present. opencv-python>=4.10 is built
+    # against NumPy 2 and segfaults on import after anim/motion_lib.py aliases numpy._core.
+    "opencv-python<4.10",
+    "pyyaml>=5.3.1",
+    "tensorboardX",
+    # PyPI build: CUDA 11.7 from the nvidia-*-cu11 wheels, no extra index needed.
+    "torch==1.13.1",
+    "wandb>=0.17.4",
+    "embreex",
+    "trimesh",
+    "polyscope",
+    "send2trash",
+    # Imported by MOTION_FORGE/include/global_header.py but missing from requirements.txt.
+    "py-cpuinfo",
+    # trimesh's ray_triangle intersector (Motion Forge's fallback on non-Intel CPUs) needs rtree.
+    "rtree",
+    # Runtime requirements of IsaacGym Preview 4 (isaacgym/python/setup.py). IsaacGym
+    # itself is not on PyPI and is linked into .venv separately (see CLAUDE.md).
+    "torchvision==0.14.1",
+    "scipy>=1.5.0",
+    "pillow",
+    "imageio",
+    "ninja",
+    # torch.utils.cpp_extension imports setuptools; isaacgym.gymtorch JIT-builds with it.
+    "setuptools",
+]
+
+[tool.uv]
+# Not an installable package: scripts run from the repo root (`uv run python run.py ...`).
+package = false
+# torch 1.13.1 CUDA wheels and IsaacGym are Linux x86_64 only.
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
