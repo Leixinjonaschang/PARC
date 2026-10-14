@@ -1,0 +1,17 @@
+# G0 smoke S4: dataset yaml built from copies of the bundled humanoid example motions
+# (see tests/smoke/README.md for the copy step). Also used by the S5, S7 and S8 configs.
+# create_dataset re-saves every motion file it reads, in place (parc/util/create_dataset.py),
+# so never point folder_paths at data/motion_terrains/.
+save_path: "output/smoke/motions.yaml"
+folder_paths:
+- "output/smoke/motions/"
+char_filepath: "data/assets/humanoid.xml"
+compute_preprocessing_data: true
+override_old_hf_mask_inds: false
+cut_some_classes_in_half: false
+motion_classes_to_cut_in_half: []
+max_terrain_dim_x: 1001
+max_terrain_dim_y: 1001
+# The MDM sampler asserts on motions that are exactly seq_len frames long, which the
+# upstream default of 15 lets through.
+min_num_frames: 16

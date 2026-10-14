@@ -24,7 +24,7 @@ input_dataset_folder_paths: ["$DATA_DIR/releases_parc/dec_release/initial_aug/",
                              "$DATA_DIR/releases_parc/dec_release/dec2024_iter_4_siggraph_terrain/"]
 
 ##### PARC 2 - KIN GEN #####
-input_kin_gen_config_path: "$DATA_DIR/tests/parc/april272025/iter_4/p2_kin_gen/teaser_2500_2549/kin_gen_config.yaml"
+input_kin_gen_config_path: "data/configs/parc_2_kin_gen_default.yaml"
 kin_gen_num_batches_of_motions: 10 # number of parallel jobs to run
 kin_gen_num_motions_per_batch: 50
 kin_gen_motion_id_offset: 0 # numbering starts from this number

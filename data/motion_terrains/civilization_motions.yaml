@@ -1,7 +1,7 @@
 motions:
-- file: data/terrains/civilization.pkl
+- file: data/motion_terrains/civilization.pkl
   weight: 7.066666666666666
-terrain: data/terrains/civilization.pkl
+terrain: data/motion_terrains/civilization.pkl
 #- file: ../Data/parkour_dataset/mdm_batches/TEASER_TERRAIN_dm_for_vis/TEASER_TERRAIN_mxu/TEASER_TERRAIN_mxu_007_2_dm_keyframes.pkl
 #  weight: 7.066666666666666
 #terrain: ../Data/parkour_dataset/mdm_batches/TEASER_TERRAIN_dm_for_vis/TEASER_TERRAIN_mxu/TEASER_TERRAIN_mxu_007_edit_2.pkl

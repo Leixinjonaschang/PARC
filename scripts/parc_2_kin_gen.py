@@ -1,3 +1,4 @@
+import argparse
 import sys
 import os
 import numpy as np
@@ -517,19 +518,17 @@ def mdm_procgen(config, input_mdm_model = None):
     return
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3:
-        assert sys.argv[1] == "--config"
-        cfg_path = sys.argv[2]
-        print("loading mdm procgen config from", cfg_path)
-    else:
-        cfg_path = "data/configs/parc_2_kin_gen_default.yaml"
-        print("NO CONFIG PASSED - LOADING DEFAULT CONFIG:", cfg_path)
-    
+    parser = argparse.ArgumentParser(description="PARC stage 2: generate kinematic motions with the MDM.")
+    parser.add_argument("--config", default="data/configs/parc_2_kin_gen_default.yaml",
+                        help="kin gen config yaml (default: %(default)s)")
+    cfg_path = parser.parse_args().config
+    print("loading mdm procgen config from", cfg_path)
+
     try:
         config = path_loader.load_config(cfg_path)
     except (IOError, AssertionError) as exc:
         print("error opening file:", cfg_path)
         print(exc)
-        exit()
+        sys.exit(1)
 
     mdm_procgen(config)

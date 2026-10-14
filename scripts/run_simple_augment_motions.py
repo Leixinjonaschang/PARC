@@ -30,7 +30,7 @@ if __name__ == "__main__":
         cfg_path = sys.argv[2]
         print("loading config from", cfg_path)
     else:
-        cfg_path = "tools/motion_opt/config/platform_aug.yaml"
+        cfg_path = "parc/motion_synthesis/motion_opt/config/platform_aug.yaml"
 
     try:
         with open(cfg_path, "r") as stream:

@@ -2,7 +2,7 @@ motions_yaml_path: "../Data/parkour_dataset/v_05_5/mid_climbing/dm/motions.yaml"
 num_new_motions: 32
 device: "cuda:0"
 output_folder_path: "output/_motions/mid_climbing_aug/"
-char_model: "parc/data/assets/humanoid.xml"
+char_model: "data/assets/humanoid.xml"
 use_wandb: True
 num_iters: 1000
 step_size: 0.001

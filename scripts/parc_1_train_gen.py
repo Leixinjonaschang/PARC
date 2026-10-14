@@ -1,3 +1,4 @@
+import argparse
 import sys
 from pathlib import Path
 # Ensure the repository root is on the import path so "parc" resolves consistently
@@ -113,14 +114,11 @@ def train_mdm(config, input_mdm=None):
     return diffusion_model
 
 if __name__ == "__main__":
-
-    if len(sys.argv) == 3:
-        assert sys.argv[1] == "--config"
-        cfg_path = Path(sys.argv[2])
-        print("loading mdm training config from", cfg_path)
-    else:
-        cfg_path = Path("data/configs/parc_1_train_gen.yaml")
-        print("NO CONFIG PASSED - LOADING DEFAULT CONFIG:", cfg_path)
+    parser = argparse.ArgumentParser(description="PARC stage 1: train the motion generator (MDM).")
+    parser.add_argument("--config", default="data/configs/parc_1_train_gen_default.yaml",
+                        help="mdm training config yaml (default: %(default)s)")
+    cfg_path = Path(parser.parse_args().config)
+    print("loading mdm training config from", cfg_path)
 
     try:
         config = path_loader.load_config(cfg_path)
@@ -128,6 +126,6 @@ if __name__ == "__main__":
         print("error opening file:", cfg_path)
         print(exc)
         print("Current working directory:", os.getcwd())
-        exit()
+        sys.exit(1)
 
     train_mdm(config)

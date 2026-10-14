@@ -221,7 +221,7 @@ def isaac_gym_gui():
             # env_file = "../tests/parkour/parkour_dataset_v_22_exp001/dm_env_long_terrain_x_axis.yaml"
             # env_file = "../Data/shortcut_model_demo/simple_parc/dm_env_simple_parc.yaml"
 
-            env_file = "data/terrains/dm_env_civilization.yaml"
+            env_file = "data/motion_terrains/dm_env_civilization.yaml"
             IsaacGymManager().start_isaac_gym(env_file, visualize=False)
 
             # model_path = "../tests/parkour/parkour_dataset_v_22_exp001/output/model.pt"
@@ -232,7 +232,7 @@ def isaac_gym_gui():
             #agent_file = "../tests/parc/april272025/iter_4/p3_tracker/agent_config.yaml"
             
             tracker_model_path = "../tests/parc/april272025/iter_5_light/p3_tracker/model.pt"
-            tracker_agent_path = "../tests/parc/april272025/iter_5_light/p3_tracker/agent_config.yaml"
+            tracker_agent_path = "$DATA_DIR/tests/parc/april272025/iter_5_light/p3_tracker/agent_config.yaml"
             
             IsaacGymManager().load_agent(tracker_agent_path, tracker_model_path)
 

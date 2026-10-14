@@ -1,0 +1,8 @@
+# G0 smoke S7: record motions with the S5 tracker through scripts/parc_4_phys_record.py
+# (runs scripts/run_tracker.py --mode record with one env per dataset motion).
+output_dir: "output/smoke/p4_phys_record/"
+device: "cuda:0"
+create_dataset_config: "tests/smoke/create_dataset_smoke.yaml"
+model_file: "output/smoke/p3_tracker/model.pt"
+env_file: "output/smoke/p3_tracker/dm_env.yaml"
+agent_file: "output/smoke/p3_tracker/agent_config.yaml"

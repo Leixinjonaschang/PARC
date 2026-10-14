@@ -1,4 +1,5 @@
 from scripts import run_tracker
+import argparse
 import sys
 import yaml
 import os
@@ -81,15 +82,11 @@ def train_tracker(config):
     return
 
 if __name__ == "__main__":
-    
-
-    if len(sys.argv) == 3:
-        assert sys.argv[1] == "--config"
-        cfg_path = sys.argv[2]
-        print("loading tracker training config from", cfg_path)
-    else:
-        cfg_path = "data/configs/parc_3_tracker_default.yaml"
-        print("NO CONFIG PASSED - LOADING DEFAULT CONFIG:", cfg_path)
+    parser = argparse.ArgumentParser(description="PARC stage 3: train the tracking policy.")
+    parser.add_argument("--config", default="data/configs/parc_3_tracker_default.yaml",
+                        help="tracker training config yaml (default: %(default)s)")
+    cfg_path = parser.parse_args().config
+    print("loading tracker training config from", cfg_path)
 
     try:
         config = path_loader.load_config(cfg_path)
@@ -97,6 +94,6 @@ if __name__ == "__main__":
         print("error opening file:", cfg_path)
         print(exc)
         print("Current working directory:", os.getcwd())
-        exit()
+        sys.exit(1)
 
     train_tracker(config=config)

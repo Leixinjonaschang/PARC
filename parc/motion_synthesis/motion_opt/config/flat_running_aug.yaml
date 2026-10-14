@@ -2,7 +2,7 @@ motions_yaml_path: "../Data/simple_0_6_height_motions/v_11/motions.yaml"
 num_new_motions: 128
 device: "cpu" # maybe not?
 output_folder_path: "output/_motions/aug/"
-char_model: "parc/data/assets/humanoid.xml"
+char_model: "data/assets/humanoid.xml"
 use_wandb: True
 num_iters: 1000
 step_size: 0.001

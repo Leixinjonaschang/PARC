@@ -13,7 +13,7 @@ import parc.anim.motion_lib as motion_lib
 #from diffusion.mdm_heightfield_contact_motion_sampler import MDMHeightfieldContactMotionSampler
 
 motion_lib_file = "../Data/parkour_dataset/pre_auto_aug_dataset.yaml"
-char_file = "parc/data/assets/humanoid.xml"
+char_file = "data/assets/humanoid.xml"
 device = "cpu"
 char_model = kin_char_model.KinCharModel(device)
 char_model.load_char_file(char_file)

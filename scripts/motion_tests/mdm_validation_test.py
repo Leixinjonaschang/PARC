@@ -23,7 +23,7 @@ if __name__ == "__main__":
         cfg_path = sys.argv[2]
         print("loading mdm validation config from", cfg_path)
     else:
-        cfg_path = "tools/motion_tests/mdm_validation_test.yaml"
+        cfg_path = "scripts/motion_tests/mdm_validation_test.yaml"
     
     try:
         with open(cfg_path, "r") as stream:
