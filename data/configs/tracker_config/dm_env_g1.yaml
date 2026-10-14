@@ -20,8 +20,8 @@ env:
   control_freq: 30
   control_mode: pd
   # PD gains of the pd control mode. The G1 MJCF has no stiffness or damping. Each joint takes the
-  # first key that is a case-insensitive substring of its name; keys that match no joint keep the
-  # asset's gains. Avoid keys that overlap: parc_3/parc_4 re-save this file with sorted keys.
+  # first key, in the order listed, that is a case-insensitive substring of its name; joints that
+  # match no key keep the asset's gains. parc_0/parc_3/parc_4 keep this order when they copy the file.
   pd_params:
     stiffness:
       hip_yaw: 100

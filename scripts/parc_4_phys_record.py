@@ -41,7 +41,8 @@ def record_motions(config):
         phys_record_env_config["env"]["dm"]["terrain_save_path"] = str(output_dir / "terrain.pkl")
         phys_record_env_config["env"]["output_motion_dir"] = str(output_dir / "recorded_motions")
         phys_record_env_config_path = output_dir / "record_env.yaml"
-        phys_record_env_config_path.write_text(yaml.safe_dump(phys_record_env_config))
+        # keep the key order: env.pd_params is matched first key first
+        phys_record_env_config_path.write_text(yaml.safe_dump(phys_record_env_config, sort_keys=False))
     except IOError:
         print("could not find env config path:", str(env_config_path))
         sys.exit(1)

@@ -61,7 +61,7 @@ def test_pd_params_set_every_dof(g1_env, g1):
     assert not np.any(np.isnan(kp)) and not np.any(np.isnan(kd))
     assert sorted(set(kp.tolist())) == [40.0, 80.0, 100.0, 150.0]
     assert sorted(set(kd.tolist())) == [1.0, 2.0, 4.0]
-    # every key is used, and no joint matches two keys (parc_3 re-saves the config with sorted keys)
+    # every key is used, and no joint matches two keys (so the gains do not depend on the key order)
     names = char_dof_props.get_dof_joint_names(g1)
     for i, group in enumerate(["stiffness", "damping"]):
         params = g1_env["pd_params"][group]

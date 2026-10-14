@@ -54,8 +54,8 @@ def build_pd_gains(char_model, default_kp, default_kd, pd_params: Optional[Mappi
 
     pd_params is the env config's {"stiffness": {name: kp}, "damping": {name: kd}}. Each joint takes the
     first key that is a case-insensitive substring of its name (see match_pd_params), for all of its DOFs.
-    scripts/parc_3_tracker.py and parc_4_phys_record.py re-save the env config with sorted keys, so a
-    joint that matches several keys with different values gets a warning.
+    The stage scripts (parc_0, parc_3, parc_4) keep the key order when they copy the env config. A joint
+    that matches several keys with different values gets a warning.
 
     Returns:
         kp, kd: float32 arrays of length dof_size.

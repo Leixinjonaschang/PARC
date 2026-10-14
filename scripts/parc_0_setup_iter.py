@@ -181,7 +181,8 @@ def setup_iter(config):
     if write_tracker:
         os.makedirs(output_tracker_dir, exist_ok=True)
         if tracker_env_config is not None:
-            tracker_env_config_path.write_text(yaml.safe_dump(tracker_env_config))
+            # keep the key order: env.pd_params is matched first key first
+            tracker_env_config_path.write_text(yaml.safe_dump(tracker_env_config, sort_keys=False))
         output_tracker_config_simple_path.write_text(yaml.dump(tracker_config))
         output_tracker_config_path.write_text(yaml.dump(tracker_config))
         tracker_create_data_config_path.write_text(yaml.dump(dataset_config))

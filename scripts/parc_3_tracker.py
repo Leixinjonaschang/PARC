@@ -40,11 +40,12 @@ def train_tracker(config):
         agent_config["normalizer_samples"] = 0
     
 
+    # keep the key order of the input configs: env.pd_params is matched first key first
     new_env_config_path = output_dir / "dm_env.yaml"
-    new_env_config_path.write_text(yaml.safe_dump(env_config))
+    new_env_config_path.write_text(yaml.safe_dump(env_config, sort_keys=False))
 
     new_agent_config_path = output_dir / "agent_config.yaml"
-    new_agent_config_path.write_text(yaml.safe_dump(agent_config))
+    new_agent_config_path.write_text(yaml.safe_dump(agent_config, sort_keys=False))
 
     train_argv = """run.py
 --env_config {0}
