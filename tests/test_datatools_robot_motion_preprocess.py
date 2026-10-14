@@ -82,12 +82,14 @@ def _run_port(*argv):
 
 @pytest.fixture(scope="module")
 def cli_run(tmp_root):
-    """The G1 directory (walk with a source, lift without) through the CLI, with develop's sole offset."""
+    """The G1 directory (walk with a source, lift without) through the CLI, run like develop's tool:
+    develop's sole offset, and files without a source motion processed on flat ground."""
     out_dir = tmp_root / "g1_develop_offset"
     env = dict(os.environ, CUDA_VISIBLE_DEVICES="", PARC_DATA_DIR=str(tmp_root), WANDB_MODE="disabled")
     result = subprocess.run(
         [sys.executable, "-m", "scripts.robot_motion_preprocess", "--input", str(GMR_DIR), "--output", str(out_dir),
-         "--char_file", str(G1_XML), "--source_dir", str(SOURCE_DIR), "--sole_offset", str(DEVELOP_SOLE_OFFSET)],
+         "--char_file", str(G1_XML), "--source_dir", str(SOURCE_DIR), "--sole_offset", str(DEVELOP_SOLE_OFFSET),
+         "--allow_missing_source"],
         cwd=str(REPO_ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
     assert result.returncode == 0, result.stdout
     return {"out": out_dir, "log": result.stdout}
@@ -96,7 +98,7 @@ def cli_run(tmp_root):
 @pytest.fixture(scope="module")
 def g1_default(tmp_root):
     out_dir = tmp_root / "g1_default"
-    _run_port("--input", GMR_DIR, "--output", out_dir, "--source_dir", SOURCE_DIR)
+    _run_port("--input", GMR_DIR / WALK, "--output", out_dir / WALK, "--source_dir", SOURCE_DIR)
     return out_dir
 
 
@@ -275,6 +277,14 @@ def test_output_loads_in_motion_lib_and_create_dataset(cli_run, g1, tmp_path, mo
     assert WALK in dataset_yaml.read_text()
     mlib = motion_lib.MotionLib.from_file(str(dataset_yaml), g1, "cpu", contact_info=True)
     assert mlib.num_motions() == 1 and mlib._terrains[0].hf.shape == (40, 26)
+
+
+def test_missing_source_fails_by_default(tmp_path, capsys):
+    # with --source_dir, a file without a source motion is an error, not a flat-ground motion
+    out_dir = tmp_path / "out"
+    assert rmp.main(["--input", str(GMR_DIR), "--output", str(out_dir), "--source_dir", str(SOURCE_DIR)]) == 1
+    assert "failed {}: FileNotFoundError: no source motion found".format(GMR_DIR / LIFT) in capsys.readouterr().out
+    assert sorted(p.name for p in out_dir.iterdir()) == [WALK]
 
 
 def test_wrong_char_file_fails(tmp_path):

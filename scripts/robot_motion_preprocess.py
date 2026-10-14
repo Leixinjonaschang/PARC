@@ -31,7 +31,9 @@ Source motions are found by file name in --source_dir: first in the subdirectory
 matches the input file's place under --input, then directly in --source_dir, each
 time trying the input file name and the name without --name_suffix (the suffix the
 retargeting step appended, default "_to_unitree_g1").  Source motions may be MS
-files or legacy (develop-era) motion pickles.
+files or legacy (develop-era) motion pickles.  A file without a source motion fails
+unless --allow_missing_source is given; without --source_dir and --source, every
+file is processed on a flat terrain.
 
 Usage, from the repository root:
 
@@ -126,6 +128,9 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     source.add_argument("--name_suffix", default=DEFAULT_NAME_SUFFIX,
                         help="suffix the retargeting step appended to the source file name; stripped when "
                              "looking for the source motion ('' to disable; default: %(default)s)")
+    source.add_argument("--allow_missing_source", action="store_true",
+                        help="process files without a source motion in --source_dir on a flat terrain with "
+                             "geometric contacts, instead of failing them")
 
     contacts = parser.add_argument_group("contacts")
     contacts.add_argument("--contact_bodies", nargs="+", default=list(CONSTRAINT_BODY_NAMES), metavar="NAME",
@@ -645,7 +650,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if source_dir is not None:
             source_path = find_source_file(src_file, input_root, source_dir, args.name_suffix)
             if source_path is None:
-                print("  Warning: no source motion found in {}".format(source_dir))
+                # usually a naming mismatch; a flat terrain would be wrong for most motions
+                message = "no source motion found in {}".format(source_dir)
+                if not args.allow_missing_source:
+                    failures.append((src_file, FileNotFoundError(message + " (--allow_missing_source processes "
+                                                                 "it on a flat terrain)")))
+                    print("  Failed: " + message)
+                    continue
+                print("  Warning: " + message)
         try:
             preprocess_motion_file(src_file, dst_file, source_path, char_model, source_char_model,
                                    foot_ids, constraint_ids, sole_offset, args)
