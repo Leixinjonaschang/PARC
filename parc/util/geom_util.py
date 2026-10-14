@@ -877,7 +877,7 @@ def get_char_point_samples(char_model: kin_char_model.KinCharModel,
                 offset = geom._offset + fromto/2.0 # because capsules start at their centers
 
                 z_axis = torch.tensor([0.0, 0.0, 1.0], device=char_model._device)
-                axis = torch.cross(z_axis, geom._dims)
+                axis = torch.cross(z_axis, geom._dims, dim=-1)
                 if (torch.norm(axis) < 1e-5):
                     axis = z_axis
                 else:
@@ -945,7 +945,7 @@ def get_minimal_char_point_samples(char_model: kin_char_model.KinCharModel):
                 offset = geom._offset + fromto/2.0 # because capsules start at their centers
 
                 z_axis = torch.tensor([0.0, 0.0, 1.0], device=char_model._device)
-                axis = torch.cross(z_axis, geom._dims)
+                axis = torch.cross(z_axis, geom._dims, dim=-1)
                 if (torch.norm(axis) < 1e-5):
                     axis = z_axis
                 else:
