@@ -1,4 +1,4 @@
-motions_yaml_path: "../Data/parkour_dataset/v_02/climbing/opt2/motions.yaml"
+motions_yaml_path: "$DATA_DIR/Data/parkour_dataset/v_02/climbing/opt2/motions.yaml"
 num_new_motions: 128
 device: "cuda:0"
 output_folder_path: "output/_motions/aug/"

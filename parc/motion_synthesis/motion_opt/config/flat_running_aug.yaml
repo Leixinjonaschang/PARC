@@ -1,4 +1,4 @@
-motions_yaml_path: "../Data/simple_0_6_height_motions/v_11/motions.yaml"
+motions_yaml_path: "$DATA_DIR/Data/simple_0_6_height_motions/v_11/motions.yaml"
 num_new_motions: 128
 device: "cpu" # maybe not?
 output_folder_path: "output/_motions/aug/"
