@@ -166,7 +166,8 @@ class MotionLib():
 
         if self._contact_info:
             if frames.contacts is None:
-                contacts = torch.zeros(size=[num_frames, self._kin_char_model.get_num_bodies()], dtype=torch.float32, device=self._device)
+                contacts = torch.zeros(size=[num_motions, num_frames, self._kin_char_model.get_num_contact_bodies()],
+                                       dtype=torch.float32, device=self._device)
             else:
                 contacts = frames.contacts
             if contacts.dim() == 2:
@@ -350,8 +351,9 @@ class MotionLib():
                 if curr_motion_data.body_contacts is not None:
                     contacts = curr_motion_data.body_contacts
                 else:
-                    num_joints = self._kin_char_model.get_num_joints()
-                    contacts = torch.zeros(size=[num_frames, num_joints], dtype=torch.float32, device=self._device)
+                    # contacts are stored per contact body, not per joint
+                    num_contact_bodies = self._kin_char_model.get_num_contact_bodies()
+                    contacts = torch.zeros(size=[num_frames, num_contact_bodies], dtype=torch.float32, device=self._device)
 
                 self._frame_contacts.append(contacts)
 
