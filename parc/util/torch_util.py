@@ -429,7 +429,9 @@ def exp_map_to_axis_angle(exp_map):
 
     angle = torch.norm(exp_map, dim=-1)
     angle_exp = torch.unsqueeze(angle, dim=-1)
-    axis = exp_map / angle_exp
+    # Clamp the raw norm (not the wrapped angle) so |exp_map| < min_theta cannot divide by zero;
+    # those entries get the default axis below, and their gradient stays finite.
+    axis = exp_map / angle_exp.clamp(min=min_theta)
     angle = normalize_angle(angle)
 
     default_axis = torch.zeros_like(exp_map)
