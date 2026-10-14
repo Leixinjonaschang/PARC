@@ -13,6 +13,7 @@ keyboard/mouse input.
 """
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -61,6 +62,9 @@ def test_editing_guis(tmp_path, char):
     else:
         assert "Cannot label" not in out
     assert (tmp_path / "output" / "_motions" / "new_motion.pkl").is_file()
+    # "Save Current Motion" wrote the body constraints as numpy, not as BodyConstraint objects
+    saved = re.search(r"HARNESS: saved MS motion: (\d+) body constraints, numpy (\w+); hf_mask_inds numpy (\w+)", out)
+    assert saved is not None and int(saved.group(1)) > 0 and saved.groups()[1:] == ("True", "True"), out
 
 
 @pytest.mark.parametrize("char", ["g1", "humanoid"])

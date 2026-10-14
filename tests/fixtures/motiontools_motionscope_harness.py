@@ -125,6 +125,18 @@ def loaded_motions():
     return list(g.MotionManager().get_loaded_motions().keys())
 
 
+def describe_saved_motion(path):
+    # MS files store body constraints as dicts of numpy values and hf_mask_inds as numpy arrays
+    import numpy as np
+    import parc.util.file_io as file_io
+    misc_data = file_io.load_ms_file(path).misc_data
+    constraints = [c for body in misc_data.get("opt:body_constraints", []) for c in body]
+    numpy_constraints = all(isinstance(c, dict) and isinstance(c["constraint_point"], np.ndarray) for c in constraints)
+    numpy_inds = all(isinstance(inds, np.ndarray) for inds in misc_data.get("hf_mask_inds", []))
+    print("HARNESS: saved MS motion: {} body constraints, numpy {}; hf_mask_inds numpy {}".format(
+        len(constraints), numpy_constraints, numpy_inds))
+
+
 EDITING_GUIS = ("time", "motion", "contact", "terrain", "optimization", "path_planning", "recording")
 
 if SCENARIO == "basic":
@@ -152,6 +164,7 @@ if SCENARIO == "basic":
     frames(1, click=["Scale Motion Segment"])
     frames(1, click=["Cut frames [inclusive]"])
     frames(1, click=["Save Current Motion"])
+    describe_saved_motion("output/_motions/new_motion.pkl")
     frames(1, click=["[LEGACY] Save Current Motion"])
     if CFG.get("load_motion"):
         g.g_motion_filepath = CFG["load_motion"]

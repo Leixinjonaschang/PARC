@@ -25,7 +25,8 @@ import torch
 import math
 from parc.anim import motion_lib
 from parc.util import motion_edit_lib as medit_lib
-from parc.util import file_io
+from parc.util import file_io_helper
+from parc.util import motion_util
 
 from parc.motionscope.include import global_header as g
 from parc.motionscope.include import motion_editing_gui
@@ -323,52 +324,37 @@ def main_loop():
             g.MainVars().saved_cam_params = cam_params
 
         if psim.Button("Save Current Motion"):
+            # file_io_helper.save_ms_file stores the tensors (body constraints, hf_mask_inds,
+            # path nodes) as numpy, the MS file convention.
+            mlib = curr_motion.mlib
+            motion_frames = motion_util.MotionFrames(root_pos=mlib._frame_root_pos, root_rot=mlib._frame_root_rot,
+                                                     joint_rot=mlib._frame_joint_rot, contacts=mlib._frame_contacts)
 
-            misc_data = dict()
-            if g.OptimizationSettings().body_constraints is not None:
-                misc_data["opt:body_constraints"] = g.OptimizationSettings().body_constraints
+            hf_mask_inds = None
+            if mlib._hf_mask_inds is not None:
+                hf_mask_inds = mlib._hf_mask_inds[0]
 
-            if curr_motion.mlib._hf_mask_inds is not None:
-                if curr_motion.mlib._hf_mask_inds[0] is not None:
-                    misc_data["hf_mask_inds"] = curr_motion.mlib._hf_mask_inds[0]
+            path_nodes = None
+            if main_vars.save_path_with_motion:
+                path_nodes = g.PathPlanningSettings().path_nodes
 
-            if main_vars.save_path_with_motion and \
-                g.PathPlanningSettings().path_nodes is not None:
-                misc_data["path_nodes"] = g.PathPlanningSettings().path_nodes.cpu()
-
-            if main_vars.saved_cam_params is not None:
-                misc_data["cam_params"] = main_vars.saved_cam_params
-
-            motion_data = file_io.MSMotionData(
-                root_pos = curr_motion.mlib._frame_root_pos.cpu().numpy(),
-                root_rot = curr_motion.mlib._frame_root_rot.cpu().numpy(),
-                joint_rot = curr_motion.mlib._frame_joint_rot.cpu().numpy(),
-                body_contacts = curr_motion.mlib._frame_contacts.cpu().numpy(),
-                fps = int(curr_motion.mlib._motion_fps[0].item()),
-                loop_mode = str(curr_motion.mlib.get_motion_loop_mode_enum(0).name))
-            
+            terrain = None
             if main_vars.save_terrain_with_motion:
                 terrain = g.TerrainMeshManager().get_active_terrain()
-                terrain_data = file_io.MSTerrainData(
-                    hf = terrain.hf.cpu().numpy(),
-                    hf_maxmin = terrain.hf_maxmin.cpu().numpy(),
-                    min_point = terrain.min_point.cpu().numpy(),
-                    dx = terrain.dxdy[0].item()
-                )
-            else:
-                terrain_data = None
-
-            file_data = file_io.MSFileData(
-                motion_data = motion_data,
-                terrain_data = terrain_data,
-                misc_data = misc_data
-            )
 
             os.makedirs("output/_motions/", exist_ok=True)
 
             save_path = "output/_motions/new_motion.pkl"
 
-            file_io.save_ms_file(file_data, save_path)
+            file_io_helper.save_ms_file(save_path,
+                                        motion_frames=motion_frames,
+                                        fps=int(mlib._motion_fps[0].item()),
+                                        loop_mode=str(mlib.get_motion_loop_mode_enum(0).name),
+                                        terrain=terrain,
+                                        hf_mask_inds=hf_mask_inds,
+                                        body_constraints=g.OptimizationSettings().body_constraints,
+                                        path_nodes=path_nodes,
+                                        cam_params=main_vars.saved_cam_params)
 
             print("saved to:", save_path)
 
