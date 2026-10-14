@@ -10,9 +10,11 @@ import torch
 import parc.anim.kin_char_model as kin_char_model
 import parc.anim.motion_lib as motion_lib
 import parc.motion_synthesis.motion_opt.motion_optimization as moopt
+import parc.util.file_io as file_io
 import parc.util.file_io_helper as file_io_helper
 import parc.util.geom_util as geom_util
 import parc.util.motion_util as motion_util
+import parc.util.pickle_compat as pickle_compat
 import parc.util.terrain_util as terrain_util
 import parc.util.torch_util as torch_util
 
@@ -182,14 +184,20 @@ class MotionData:
 def load_motion_file(motion_filepath, device="cpu", convert_to_class=True):
     warnings.warn(
         "load_motion_file is deprecated and will be removed in a future release. "
-        "Use new_function() instead.",
+        "Use parc.util.file_io_helper.load_ms_file() with MS files instead "
+        "(convert legacy files with scripts/convert_legacy_motions.py).",
         DeprecationWarning,
         stacklevel=2,
     )
     ext = pathlib.Path(motion_filepath).suffix
     assert ext == ".pkl"
-    with open(motion_filepath, "rb") as filestream:
-        motion_data = pickle.load(filestream)
+    # Legacy files pickle develop-era classes (util.terrain_util.SubTerrain, ...)
+    # and may hold tensors pickled on a GPU; pickle_compat handles both.
+    motion_data = pickle_compat.load(motion_filepath, map_location=device)
+    if file_io.is_ms_container(motion_data):
+        raise file_io.MSFileFormatError(
+            "{} is an MS file, not a legacy motion file; load it with "
+            "parc.util.file_io_helper.load_ms_file()".format(motion_filepath))
     if not convert_to_class:
         return motion_data
     return MotionData(motion_data, device=device)

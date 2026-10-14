@@ -58,9 +58,34 @@ from typing import (
 
 import numpy as np
 
+import parc.util.pickle_compat as pickle_compat
+
 MOTION_DATA_KEY = "motion_data"
 TERRAIN_DATA_KEY = "terrain_data"
 MISC_DATA_KEY = "misc_data"
+MS_CONTAINER_KEYS = (MOTION_DATA_KEY, TERRAIN_DATA_KEY, MISC_DATA_KEY)
+
+# Top-level keys of develop-era motion pickles (motion_edit_lib.save_motion_data
+# and robot_motion_preprocess): flat dicts, not MS containers.
+LEGACY_MOTION_KEYS = ("frames", "terrain", "contacts", "fps", "loop_mode")
+LEGACY_CONVERT_HINT = (
+    "convert with scripts/convert_legacy_motions.py, e.g. "
+    "python -m scripts.convert_legacy_motions --inputs <legacy dir> --outputs <new dir> --char-file <char xml>"
+)
+
+
+class MSFileFormatError(ValueError):
+    """The file is not a readable MS container (for example a legacy motion pickle)."""
+
+
+def is_ms_container(obj) -> bool:
+    return isinstance(obj, dict) and any(key in obj for key in MS_CONTAINER_KEYS)
+
+
+def is_legacy_motion_dict(obj) -> bool:
+    return (isinstance(obj, dict) and not is_ms_container(obj)
+            and any(key in obj for key in LEGACY_MOTION_KEYS))
+
 
 @dataclass
 class MSMotionData:
@@ -108,25 +133,37 @@ def save_ms_file(data: MSFileData, filepath):
         assert False, "unknown extension"
     return
     
+def _load_section(container, key, filepath):
+    payload = container.get(key)
+    if payload is None:
+        return None
+    try:
+        return pickle_compat.loads(payload)
+    except Exception as exc:
+        raise MSFileFormatError("{}: cannot unpickle the '{}' section ({}: {})".format(
+            filepath, key, type(exc).__name__, exc)) from exc
+
+
 def load_ms_file(filepath) -> MSFileData:
+    # pickle_compat remaps develop-era module paths and numpy._core, and loads
+    # tensors pickled on any device onto the CPU.
     with open(filepath, "rb") as f:
-        container = pickle.load(f)
+        container = pickle_compat.load(f)
 
-    try:
-        motion_data = pickle.loads(container[MOTION_DATA_KEY])
-    except:
-        print("Error loading motion data")
-        motion_data = None
+    if not is_ms_container(container):
+        if is_legacy_motion_dict(container):
+            raise MSFileFormatError("{}: legacy motion format (keys {}), not an MS file; {}".format(
+                filepath, sorted(map(str, container.keys())), LEGACY_CONVERT_HINT))
+        if isinstance(container, dict):
+            found = "keys {}".format(sorted(map(str, container.keys())))
+        else:
+            found = "a {}".format(type(container).__name__)
+        raise MSFileFormatError("{}: not an MS motion file (expected a dict with keys {}, found {})".format(
+            filepath, list(MS_CONTAINER_KEYS), found))
 
-    try:
-        terrain_data = pickle.loads(container[TERRAIN_DATA_KEY])
-    except:
-        terrain_data = None
-
-    try:
-        misc_data = pickle.loads(container[MISC_DATA_KEY])
-    except:
-        misc_data = None
+    motion_data = _load_section(container, MOTION_DATA_KEY, filepath)
+    terrain_data = _load_section(container, TERRAIN_DATA_KEY, filepath)
+    misc_data = _load_section(container, MISC_DATA_KEY, filepath)
 
     if motion_data is not None:
         motion_data = MSMotionData(**motion_data)

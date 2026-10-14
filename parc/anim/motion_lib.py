@@ -288,6 +288,9 @@ class MotionLib():
             
             curr_file_data = file_io_helper.load_ms_file(curr_file, device=self._device)
             curr_motion_data = curr_file_data.motion_data
+            if curr_motion_data is None:
+                raise ValueError("{} has no motion data (a terrain-only MS file?); "
+                                 "MotionLib needs motion frames".format(curr_file))
 
             fps = curr_motion_data.fps
             loop_mode = LoopMode[curr_motion_data.loop_mode].value
