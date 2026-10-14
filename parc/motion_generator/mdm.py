@@ -385,8 +385,12 @@ class MDM(MotionGenerator):
                 ml_contacts = ml_component_dict[MDMFrameType.CONTACTS]
                 mdm_feature_list.append(ml_contacts)
             else:
-                raise NameError(comp_name) 
+                raise NameError(comp_name)
         mdm_features = torch.cat(mdm_feature_list, dim=-1)
+
+        # The components may come from a sampler or frames on another device; the
+        # stats and the denoiser live on the model's device. (no-op when already there)
+        mdm_features = mdm_features.to(self._device)
 
         if standardize:
             mdm_features = self.standardize_features(mdm_features)
@@ -792,26 +796,35 @@ class MDM(MotionGenerator):
 
         # body_pos: (batch_size, seq_len, num_bodies, 3)
         # body_rot: (batch_size, seq_len, num_bodies, 4)
-        # body_points: (num_bodies, num_points(b), 3)
+        # body_points: list of (num_points(b), 3) tensors, one per body
         # hfs: (batch_size, seq_len, dim_x, dim_y)
 
         # 1. apply body transformations to body_points
         # 2. get points in coord frame of hf (they already will be, no need)
         #       - apply root heading inverse
         #       - translate by mid point of hfs (which is (0, 0) so no need)
-        # 3. call point hf sdf function to get sdfs
+        # 3. call point hf sdf function to get sdfs, one body at a time
         # 4. loss is sum of squares of negative sdfs
-        
+
         # NOTE: this function assumes base_z is lower than the minimum heightfield height
+
+        # points_hf_sdf broadcasts every point against every heightfield box, so its
+        # intermediates scale with (num points) x (num boxes). Calling it once per body
+        # instead of once on all points keeps that peak small for characters with many
+        # bodies (G1 has 36). The SDF of a point does not depend on the other points,
+        # so the result is the same as for the concatenated points, in the same order.
 
         batch_size = body_pos.shape[0]
 
         num_bodies = self._kin_char_model.get_num_joints()
         assert num_bodies == len(body_points)
 
-        # NOTE: an alternative to cat is to pass body points as shape: (num_points, 3),
-        # and keeping track of the slices for each body
-        localized_points = []
+        negative_dims = torch.tensor([self._num_x_neg, self._num_y_neg], dtype=torch.float32, device=self._device)
+        min_box_center = -self._dxdy * negative_dims
+        min_box_center = min_box_center.unsqueeze(0).expand(batch_size, 2)
+        hfs_squeezed = hfs.squeeze(1)
+
+        body_sdfs = []
         for b in range(num_bodies):
             # unsqueeze sequence dimension and batch dimension
             curr_body_points = body_points[b].unsqueeze(0).unsqueeze(0) # shape: (1, 1, num_points(b), 3)
@@ -821,14 +834,11 @@ class MDM(MotionGenerator):
             curr_body_points = torch_util.quat_rotate(body_rot_unsq, curr_body_points) + body_pos_unsq
             # shape: (batch_size, seq_len, num_points(b), 3)
 
-            # append flattened points across seq_len and num_points dims
-            localized_points.append(curr_body_points.view(batch_size, -1, 3))
-        localized_points = torch.cat(localized_points, dim=1) # shape: (batch_size, num points, 3)
-
-        negative_dims = torch.tensor([self._num_x_neg, self._num_y_neg], dtype=torch.float32, device=self._device)
-        min_box_center = -self._dxdy * negative_dims
-        min_box_center = min_box_center.unsqueeze(0).expand(batch_size, 2)
-        sdf = terrain_util.points_hf_sdf(localized_points, hfs.squeeze(1), min_box_center, self._dxdy, base_z = base_z)
+            # flatten across seq_len and num_points dims
+            curr_body_points = curr_body_points.reshape(batch_size, -1, 3)
+            body_sdfs.append(terrain_util.points_hf_sdf(curr_body_points, hfs_squeezed, min_box_center,
+                                                        self._dxdy, base_z = base_z))
+        sdf = torch.cat(body_sdfs, dim=1)
         return sdf # shape: [batch_size, num_points]
     
     
