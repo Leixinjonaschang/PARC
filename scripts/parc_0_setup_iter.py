@@ -1,3 +1,4 @@
+import argparse
 import yaml
 import os
 import datetime
@@ -185,13 +186,11 @@ def setup_iter(config):
     return
 
 if __name__ == "__main__":
-    if len(sys.argv) == 3:
-        assert sys.argv[1] == "--config"
-        cfg_path = sys.argv[2]
-        print("loading setup config from", cfg_path)
-    else:
-        cfg_path = "data/configs/parc_0_setup_iter_config.yaml"
-        print("NO CONFIG PASSED - LOADING DEFAULT CONFIG:", cfg_path)
+    parser = argparse.ArgumentParser(description="PARC stage 0: write the configs for a new iteration.")
+    parser.add_argument("--config", default="data/configs/parc_0_setup_iter_config.yaml",
+                        help="setup config yaml (default: %(default)s)")
+    cfg_path = parser.parse_args().config
+    print("loading setup config from", cfg_path)
 
     try:
         config = path_loader.load_config(cfg_path)
@@ -199,6 +198,6 @@ if __name__ == "__main__":
         print("error opening file:", cfg_path)
         print(exc)
         print("Current working directory:", os.getcwd())
-        exit()
+        sys.exit(1)
 
     setup_iter(config=config)
