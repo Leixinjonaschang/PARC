@@ -404,6 +404,7 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
             self._envs.append(env_ptr)
 
         Logger.print("\n")
+        self._check_char_model()
         return
 
     def _build_env(self, env_id, env_ptr, config):
@@ -428,7 +429,7 @@ class IGParkourEnv(ig_char_env.IGCharEnv):
         
         char_handle = self._gym.create_actor(env_ptr, self._char_asset, start_pose, "ref character", col_group, col_filter, segmentation_id)
         
-        dof_prop = self._gym.get_asset_dof_properties(self._char_asset)
+        dof_prop = self._get_char_dof_props()
         dof_prop["driveMode"] = gymapi.DOF_MODE_EFFORT
         dof_prop["stiffness"] = 0.0
         dof_prop["damping"] = 0.0

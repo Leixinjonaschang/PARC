@@ -10,8 +10,10 @@ import torch
 import parc.anim.kin_char_model as kin_char_model
 import parc.anim.motion_lib as motion_lib
 import parc.motion_tracker.envs.base_env as base_env
+import parc.motion_tracker.envs.char_dof_props as char_dof_props
 import parc.motion_tracker.envs.ig_env as ig_env
 import parc.util.torch_util as torch_util
+from parc.util.logger import Logger
 
 
 class CameraMode(enum.Enum):
@@ -100,7 +102,39 @@ class IGCharEnv(ig_env.IGEnv):
         self._char_asset = self._gym.load_asset(self._sim, char_file_dir, char_file_filename, asset_options)
 
         self._build_kin_char_model(char_file)
+        self._build_char_dof_params(config)
         return
+
+    def _build_char_dof_params(self, config):
+        # Per-DOF joint limits and PD gains for the character actors. The arrays are in the kinematic
+        # model's DOF order, so check that it is IsaacGym's.
+        sim_dof_names = self._gym.get_asset_dof_names(self._char_asset)
+        kin_dof_joint_names = char_dof_props.get_dof_joint_names(self._kin_char_model)
+        assert(len(sim_dof_names) == len(kin_dof_joint_names)), \
+            "The simulated character has {} DOFs, the kinematic model {}".format(len(sim_dof_names), len(kin_dof_joint_names))
+        for sim_name, kin_name in zip(sim_dof_names, kin_dof_joint_names):
+            assert(sim_name.startswith(kin_name)), \
+                "DOF order differs: simulated DOF {} belongs to kinematic joint {}".format(sim_name, kin_name)
+
+        # Limits come from the kinematic model, in radians. IsaacGym reads no joint ranges from MJCF
+        # joints without limited="true", which is every joint of the G1 MJCF.
+        self._char_dof_lower, self._char_dof_upper = char_dof_props.get_kin_dof_limits(self._kin_char_model)
+
+        # PD gains: the asset's, overridden by env.pd_params (the G1 MJCF has no stiffness or damping).
+        asset_dof_prop = self._gym.get_asset_dof_properties(self._char_asset)
+        pd_params = config["env"].get("pd_params", None)
+        self._char_dof_kp, self._char_dof_kd, self._char_dof_gain_keys = char_dof_props.build_pd_gains(
+            self._kin_char_model, asset_dof_prop["stiffness"], asset_dof_prop["damping"], pd_params)
+        return
+
+    def _get_char_dof_props(self):
+        # DOF properties for a character actor: the asset's, with the kinematic model's joint limits.
+        # hasLimits is read-only: IsaacGym keeps (and PhysX enforces) only the limits of DOFs whose MJCF
+        # joint is limited="true", and drops the others.
+        dof_prop = self._gym.get_asset_dof_properties(self._char_asset)
+        dof_prop["lower"] = self._char_dof_lower
+        dof_prop["upper"] = self._char_dof_upper
+        return dof_prop
 
     def _build_character(self, env_id, env_ptr, config):
         col_group = env_id
@@ -114,11 +148,12 @@ class IGCharEnv(ig_env.IGEnv):
         char_handle = self._gym.create_actor(env_ptr, self._char_asset, start_pose, "character", col_group, col_filter, segmentation_id)
         
         drive_mode = self._control_mode_to_drive_mode(self._char_control_mode)
-        dof_prop = self._gym.get_asset_dof_properties(self._char_asset)
+        dof_prop = self._get_char_dof_props()
         dof_prop["driveMode"] = drive_mode
         
         if (self._char_control_mode == ControlMode.pd):
-            pass
+            dof_prop["stiffness"] = self._char_dof_kp
+            dof_prop["damping"] = self._char_dof_kd
         elif (self._char_control_mode == ControlMode.vel):
             dof_prop["stiffness"] = 0.0
         elif (self._char_control_mode == ControlMode.torque):
@@ -134,6 +169,8 @@ class IGCharEnv(ig_env.IGEnv):
             assert(False), "Unsupported control mode: {}".format(self._char_control_mode)
         
         self._gym.set_actor_dof_properties(env_ptr, char_handle, dof_prop)
+        if (env_id == 0):
+            self._print_dof_props(env_ptr, char_handle, dof_prop)
 
         return char_handle
 
@@ -206,7 +243,6 @@ class IGCharEnv(ig_env.IGEnv):
         self._char_action_buffer = self._action_buffer[..., 0:a_dim]
         
         key_bodies = config["env"].get("key_bodies", [])
-        print('asda',key_bodies)
         self._key_body_ids = self._build_body_ids_tensor(key_bodies)
         
         if (self._char_control_mode == ControlMode.pd_exp
@@ -220,17 +256,16 @@ class IGCharEnv(ig_env.IGEnv):
         sim_body_names = self._gym.get_actor_rigid_body_names(self._envs[0], self._get_char_actor_handle())
         kin_body_names = self._kin_char_model.get_body_names()
 
+        assert(len(sim_body_names) == len(kin_body_names)), \
+            "The simulated character has {} bodies, the kinematic model {}".format(len(sim_body_names), len(kin_body_names))
         for sim_name, kin_name in zip(sim_body_names, kin_body_names):
-            assert(sim_name == kin_name)
+            assert(sim_name == kin_name), "Body order differs: simulated {}, kinematic {}".format(sim_name, kin_name)
 
         return
 
     def _build_pd_exp_tensors(self):
-        dof_prop = self._gym.get_asset_dof_properties(self._char_asset)
-        kp = dof_prop["stiffness"]
-        kd = dof_prop["damping"]
-        self._pd_exp_kp = torch.tensor(kp, device=self._device, dtype=torch.float32)
-        self._pd_exp_kd = torch.tensor(kd, device=self._device, dtype=torch.float32)
+        self._pd_exp_kp = torch.tensor(self._char_dof_kp, device=self._device, dtype=torch.float32)
+        self._pd_exp_kd = torch.tensor(self._char_dof_kd, device=self._device, dtype=torch.float32)
 
         env_handle = self._envs[0]
         char_handle = self._get_char_actor_handle()
@@ -274,8 +309,10 @@ class IGCharEnv(ig_env.IGEnv):
         body_ids = []
 
         for body_name in body_names:
-            body_id = self._gym.find_actor_rigid_body_handle(env_ptr, char_handle, body_name)
-            assert(body_id != -1)
+            # config names may be aliases, e.g. left_foot for the G1's left_ankle_roll_link
+            sim_body_name = self._kin_char_model.resolve_body_name(body_name)
+            body_id = self._gym.find_actor_rigid_body_handle(env_ptr, char_handle, sim_body_name)
+            assert(body_id != -1), "Body {} not found in the simulated character".format(sim_body_name)
             body_ids.append(body_id)
 
         body_ids = torch.tensor(body_ids, device=self._device, dtype=torch.long)
@@ -287,6 +324,35 @@ class IGCharEnv(ig_env.IGEnv):
         total_mass = sum(rb.mass for rb in rb_props)
         char_info = "Char properties\n\tDoFs: {:d}\n\tMass: {:.3f} kg\n".format(num_dofs, total_mass)
         print(char_info)
+        return
+
+    def _print_dof_props(self, env_ptr, char_handle, applied_dof_prop):
+        # Prints the character's DOF properties (limits as set, the rest as IsaacGym reports them) and
+        # checks that IsaacGym applied them. It keeps the limits only where hasLimits (see _get_char_dof_props).
+        dof_names = self._gym.get_actor_dof_names(env_ptr, char_handle)
+        dof_prop = self._gym.get_actor_dof_properties(env_ptr, char_handle)
+        has_limits = dof_prop["hasLimits"]
+        lines = ["Char DOF properties ({:s} control)".format(self._char_control_mode.name),
+                 "{:<28s} {:>8s} {:>8s} {:>9s} {:>9s} {:>9s} {:>8s}  {:s}".format(
+                     "dof", "lower", "upper", "hasLimits", "effort", "stiffness", "damping", "pd_params keys (kp, kd)")]
+        for i, name in enumerate(dof_names):
+            lines.append("{:<28s} {:8.4f} {:8.4f} {:>9s} {:9.3g} {:9.2f} {:8.2f}  {}".format(
+                name, applied_dof_prop["lower"][i], applied_dof_prop["upper"][i], str(bool(has_limits[i])),
+                dof_prop["effort"][i], dof_prop["stiffness"][i], dof_prop["damping"][i], self._char_dof_gain_keys[i]))
+        if (not np.all(has_limits)):
+            lines.append("Warning: PhysX enforces no joint limits on the {:d} DOFs without hasLimits (MJCF joints "
+                         "that are not limited=\"true\"); their limits only set the action bounds."
+                         .format(int(np.sum(~has_limits))))
+        Logger.print("\n".join(lines) + "\n")
+
+        for field in ["hasLimits", "effort", "stiffness", "damping", "driveMode"]:
+            assert(np.array_equal(dof_prop[field], applied_dof_prop[field])), \
+                "IsaacGym did not apply the character's DOF {}: set {}, read back {}".format(
+                    field, applied_dof_prop[field], dof_prop[field])
+        for field in ["lower", "upper"]:
+            assert(np.array_equal(dof_prop[field][has_limits], applied_dof_prop[field][has_limits])), \
+                "IsaacGym did not apply the character's DOF {} limits: set {}, read back {}".format(
+                    field, applied_dof_prop[field], dof_prop[field])
         return
     
     def _control_mode_to_drive_mode(self, mode):
@@ -305,11 +371,9 @@ class IGCharEnv(ig_env.IGEnv):
         return drive_mode
     
     def _build_action_bounds_pd(self):
-        env_handle = self._envs[0]
-        char_handle = self._get_char_actor_handle()
-        dof_prop = self._gym.get_actor_dof_properties(env_handle, char_handle)
-        dof_low = dof_prop["lower"]
-        dof_high = dof_prop["upper"]
+        # the kinematic model's joint limits, which _build_character also gives IsaacGym
+        dof_low = self._char_dof_lower
+        dof_high = self._char_dof_upper
         
         low = np.zeros(dof_high.shape)
         high = np.zeros(dof_high.shape)
