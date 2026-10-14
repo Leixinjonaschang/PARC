@@ -17,6 +17,7 @@ import parc.motionscope.ps_mdm_util as ps_mdm_util
 import parc.motion_synthesis.procgen.mdm_path as mdm_path
 import parc.util.misc_util as misc_util
 import parc.util.motion_util as motion_util
+import parc.util.path_loader as path_loader
 import parc.util.torch_util as torch_util
 from parc.motionscope.include.singleton import SingletonClass
 
@@ -43,7 +44,7 @@ class IsaacGymManager(SingletonClass):
     def load_agent(self, agent_file, model_file):
         if platform.system() == "Linux":
             self.agent = agent_builder.build_agent(agent_file, self.env, self.device)
-            self.agent.load(model_file)
+            self.agent.load(str(path_loader.resolve_path(model_file)))
             self.agent.eval_mode()
             self.agent.reset()
         return
@@ -231,7 +232,7 @@ def isaac_gym_gui():
             #model_path = "../tests/parc/april272025/iter_4/p3_tracker/model.pt"
             #agent_file = "../tests/parc/april272025/iter_4/p3_tracker/agent_config.yaml"
             
-            tracker_model_path = "../tests/parc/april272025/iter_5_light/p3_tracker/model.pt"
+            tracker_model_path = "$DATA_DIR/tests/parc/april272025/iter_5_light/p3_tracker/model.pt"
             tracker_agent_path = "$DATA_DIR/tests/parc/april272025/iter_5_light/p3_tracker/agent_config.yaml"
             
             IsaacGymManager().load_agent(tracker_agent_path, tracker_model_path)
@@ -294,12 +295,10 @@ def isaac_gym_gui():
                                                              path_settings=mdm_path_settings,
                                                              verbose=False)
                     
-                    mlib_motion_frames, mlib_contact_frames = gen_motion_frames.get_mlib_format(IsaacGymManager().env._kin_char_model)
-
-                    mlib_motion_frames = mlib_motion_frames.to(device=g.MainVars().device).squeeze(0)
-                    mlib_contact_frames = mlib_contact_frames.to(device=g.MainVars().device).squeeze(0)
-                    print(mlib_motion_frames.shape, mlib_contact_frames.shape)
-                    g.MotionManager().make_new_motion(mlib_motion_frames, mlib_contact_frames, "closed_loop_gen_motion",
+                    # MotionFrames [1, num_frames, ...]
+                    gen_motion_frames = gen_motion_frames.get_copy(g.MainVars().device).squeeze(0)
+                    g.MotionManager().make_new_motion(motion_frames=gen_motion_frames,
+                                                      new_motion_name="closed_loop_gen_motion",
                                                       motion_fps=30, vis_fps=5, new_color = [0.2, 0.8, 0.2])
                     
                 changed, IsaacGymManager().is_closed_loop_generating = psim.Checkbox("Is closed loop generating", IsaacGymManager().is_closed_loop_generating)

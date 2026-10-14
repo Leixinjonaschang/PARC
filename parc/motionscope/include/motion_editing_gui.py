@@ -9,6 +9,7 @@ import parc.anim.kin_char_model as kin_char_model
 import parc.anim.motion_lib as motion_lib
 import parc.motionscope.include.file_browser as file_browser
 import parc.motionscope.include.global_header as g
+import parc.motionscope.polyscope_util as ps_util
 import parc.motionscope.ps_mdm_util as ps_mdm_util
 import parc.util.geom_util as geom_util
 import parc.util.motion_edit_lib as medit_lib
@@ -36,8 +37,8 @@ class MotionStitcherApp(SingletonClass):
         self.motion_a_index = 0
         self.motion_b_index = 1
         self.output_motion_name = "stitched_motion"
-        #self.foot_body_names = "left_foot,right_foot"
-        self.foot_body_names = "left_ankle_roll_link,right_ankle_roll_link"
+        # generic names, resolved per character by KinCharModel (G1: *_ankle_roll_link)
+        self.foot_body_names = "left_foot,right_foot"
         self.status_message = ""
 
         self._last_motion_pair = None
@@ -398,8 +399,7 @@ class MotionStitcherApp(SingletonClass):
         if len(foot_body_names) == 0:
             return False, "Specify at least one foot body name to align foot heights."
 
-        available_body_names = set(char_a.get_body_names())
-        missing_names = [name for name in foot_body_names if name not in available_body_names]
+        missing_names = [name for name in foot_body_names if not char_a.has_body(name)]
         if missing_names:
             missing_list = ", ".join(missing_names)
             return False, f"Unknown foot body name(s): {missing_list}."
@@ -708,19 +708,9 @@ def draw_editor_ui(curr_motion: ps_mdm_util.MDMMotionPS):
                     new_motion_name=curr_motion.name,
                     motion_fps=curr_motion.mlib._motion_fps[0].item())
 
-            if psim.Button("Resample motion frames for safe trajectory"):
-                new_motion_frames = medit_lib.resample_motion_for_safe_body_trajectories(
-                    motion_frames=curr_motion.mlib.get_frames_for_id(0),
-                    char_model=curr_motion.mlib._kin_char_model,
-                    fps=curr_motion.mlib.get_motion_fps(0),
-                    max_jerk=1000.0,
-                    max_subdivisions=4
-                )
-
-                g.MotionManager().make_new_motion(
-                    motion_frames=new_motion_frames,
-                    new_motion_name=curr_motion.name + "_safer",
-                    motion_fps=curr_motion.mlib._motion_fps[0].item())
+            ps_util.unavailable_button("Resample motion frames for safe trajectory",
+                                       "motion_edit_lib.resample_motion_for_safe_body_trajectories "
+                                       "does not exist in this version of PARC")
 
             psim.TreePop()
 
@@ -834,13 +824,14 @@ def draw_analytics_ui(curr_motion: ps_mdm_util.MDMMotionPS):
             if psim.TreeNode("Joint DOFS"):
                 joint_rot_np = joint_rot.cpu().numpy()
 
-                for b in range(mlib._kin_char_model.get_num_joints()):
+                # joint_rot has no entry for the root: joint b is joint_rot[:, b - 1]
+                for b in range(1, mlib._kin_char_model.get_num_joints()):
                     body_name = char_model.get_body_name(b)
 
                     if psim.TreeNode(body_name):
                         xyzw_str = ["x", "y", "z", "w"]
                         for i in range(4):
-                            joint_rot_1d = joint_rot_np[:, b, i]
+                            joint_rot_1d = joint_rot_np[:, b - 1, i]
                             psim.PlotLines(
                                 label=body_name + " " + xyzw_str[i],
                                 values=joint_rot_1d.tolist(),
@@ -1110,7 +1101,8 @@ def motion_editor_gui():
                                             update_terrain=settings.load_terrain_with_motion)
                 else:
                     motion_data = medit_lib.load_motion_file(g.g_motion_filepath, device=main_vars.device, convert_to_class=False)
-                    motion_frames = motion_util.MotionFrames.from_legacy_mlib_format(torch.from_numpy(motion_data['frames']), curr_motion.char.char_model)
+                    mlib_frames = torch.as_tensor(np.asarray(motion_data['frames']), dtype=torch.float32, device=main_vars.device)
+                    motion_frames = motion_util.motion_frames_from_mlib_format(mlib_frames, curr_motion.char.char_model)
 
                     motion_frames.contacts = torch.zeros(size=[motion_frames.root_pos.shape[0], curr_motion.char.char_model.get_num_contact_bodies()], dtype=torch.float32, device=main_vars.device)
                     

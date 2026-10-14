@@ -3,6 +3,7 @@ from typing import List
 
 import numpy as np
 import polyscope as ps
+import polyscope.imgui as psim
 import torch
 import trimesh
 
@@ -12,6 +13,21 @@ import parc.util.motion_edit_lib as medit_lib
 import parc.util.torch_util as torch_util
 from parc.util.motion_util import MotionFrames
 
+
+def unavailable_button(label: str, reason: str):
+    """Draws ``label`` as a disabled button whose tooltip gives ``reason``.
+
+    For GUI actions whose implementation does not exist in this version (clicking them
+    used to raise AttributeError and close MotionScope).
+    """
+    psim.BeginDisabled(True)
+    psim.Button(label)
+    psim.EndDisabled()
+    if psim.IsItemHovered(psim.ImGuiHoveredFlags_AllowWhenDisabled):
+        psim.SetTooltip(reason)
+    psim.SameLine()
+    psim.TextDisabled("(unavailable)")
+    return
 
 def create_sphere(center, radius, name="sphere", color=(1.0, 0.0, 0.0), num_subdivisions=0):
     sphere_mesh = trimesh.primitives.Sphere(radius=radius, subdivisions=num_subdivisions)

@@ -7,6 +7,7 @@ import polyscope.imgui as psim
 import torch
 
 import parc.motionscope.include.global_header as g
+import parc.motionscope.polyscope_util as ps_util
 import parc.util.geom_util as geom_util
 import parc.util.motion_edit_lib as medit_lib
 import parc.util.terrain_util as terrain_util
@@ -217,18 +218,8 @@ def terrain_editing_gui():
 
             curr_motion.char.update_local_hf(terrain)
 
-        if(psim.Button("Guess Terrain 2")):
-            new_terrain = terrain_util.build_contact_terrain_heuristic(
-                motion=curr_motion.mlib.get_frames_for_id(0),
-                char_model=curr_motion.char.char_model,
-                body_point_samples=curr_motion.char.get_surface_point_samples(),
-                contact_threshold=0.1,
-                xy_padding=2.0,
-                grid_dx=0.1,
-                grid_dy=0.1
-            )
-            terrain_manager.register_terrain("guessed terrain", new_terrain)
-            curr_motion.char.update_local_hf(terrain)
+        ps_util.unavailable_button("Guess Terrain 2",
+                                   "terrain_util.build_contact_terrain_heuristic does not exist in this version of PARC")
         psim.TreePop()
 
     if psim.TreeNode("Change Terrain Dimensions"):
@@ -436,11 +427,7 @@ def terrain_editing_gui():
                                           max_stair_thickness=settings.max_stair_thickness)
             terrain_manager.rebuild()
 
-        if psim.Button("Gen Cave"):
-
-            terrain = terrain_util.generate_cave(25, 25, 5, device=g.MainVars().device)
-
-            terrain_manager.update_active_terrain(terrain)
+        ps_util.unavailable_button("Gen Cave", "terrain_util.generate_cave does not exist in this version of PARC")
 
         psim.TreePop()
     return
