@@ -1,0 +1,15 @@
+# G1 env smoke (e): dataset yaml for the synthetic motions of make_g1_smoke_data.py, rebuilt by
+# scripts/parc_4_phys_record.py (which needs a create_dataset_config). create_dataset re-saves the
+# motion files it reads, in place.
+save_path: "output/smoke/g1_env/motions.yaml"
+folder_paths:
+- "output/smoke/g1_env/motions/"
+char_filepath: "data/assets/unitree_g1/g1_mocap_29dof.xml"
+# hf_mask_inds are only used by the MDM
+compute_preprocessing_data: false
+override_old_hf_mask_inds: false
+cut_some_classes_in_half: false
+motion_classes_to_cut_in_half: []
+max_terrain_dim_x: 1001
+max_terrain_dim_y: 1001
+min_num_frames: 16

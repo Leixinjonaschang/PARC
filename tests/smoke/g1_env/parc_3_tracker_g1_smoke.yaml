@@ -1,0 +1,13 @@
+# G1 env smoke (c): short G1 tracker training through scripts/parc_3_tracker.py, with the G1 env and
+# agent configs (FuturePoseDMPPOAgent, future-pose predictor enabled), on the synthetic motions of
+# make_g1_smoke_data.py. No create_dataset_config: that script writes the dataset yaml.
+env_config: "data/configs/tracker_config/dm_env_g1.yaml"
+agent_config: "data/configs/tracker_config/dm_agent_g1.yaml"
+output_dir: "output/smoke/g1_env/p3_tracker/"
+num_envs: 64
+# 64 envs x 32 steps = 2048 samples per iteration, so this runs 10 iterations. dm_agent_g1.yaml
+# writes model.pt at iteration 0 (and every 200), so model.pt holds the iteration-0 weights.
+max_samples: 20480
+device: "cuda:0"
+dataset_file: "output/smoke/g1_env/motions.yaml"
+in_model_file: null
