@@ -13,9 +13,34 @@
 | IsaacGym Preview 4 | ✅ 从 NVIDIA 官方 CDN 下载，解压到 `../isaacgym`，通过 `.pth` 链接进各自的 `.venv`。在 develop（torch 1.13）和 develop_migration（torch 2.2）上都实测通过；develop 上还跑通了 civilization 人形 tracker 训练冒烟 |
 | §8 决策 D1–D12 | ✅ 已定（见 §8） |
 | P0.1–P0.3（建分支、改名、打包卫生、main 的 uv 环境） | ✅ 已在 `develop_migration` 上完成 |
-| 第 1 波：P0 剩余部分、P1a、P1b、Lane B | 🔄 进行中（§6） |
-| 第 2 波：Lane A、C、D | ⏳ 等第 1 波合入 |
+| 第 1 波：P0 剩余部分、P1a、P1b、Lane B | ✅ 已合入 `develop_migration`（`89444d8`，已 push）。全部 217 个测试通过，集成冒烟通过（见下方"第 1 波结果"） |
+| 第 2 波：Lane A、C1、C2、D | 🔄 进行中。Lane C 拆成两个 agent：C1 负责 MDM、各阶段脚本、数据集和 G1 配置；C2 负责 motionscope、motion_opt、motion_tests 和 motion_edit_lib |
 | P1c、G3 的 A/B 对比和 checkpoint 兼容检查 | ⏸ 暂缓：还没有 G1 数据集和 C 代 checkpoint（R2、R3） |
+
+**第 1 波结果（2026-10-14）**
+
+- **P0**
+  - 修了 18 个文件里的 23 处过期路径。
+  - 各阶段脚本改用 argparse：参数错误时以码 2 退出，配置文件读不了时以码 1 退出。
+  - 新增 `tests/test_import_sweep.py`：97 个模块全部能导入。
+  - 人形基线门禁 G0：S3–S6 和 S8 通过；S7（record 模式）按预期失败，这是 Lane A 要修的 `_motion_lib`。
+- **P1a**
+  - G1 能加载：36 个 body、36 个关节、29 个 DOF，限位为弧度。
+  - 新增 `BODY_NAME_ALIASES`、`resolve_body_name`、`has_body`。
+  - 人形模型的输出与改动前逐位一致；与 develop 的 FK 误差不超过 4.8e-7。
+  - 78 个测试。
+- **P1b**
+  - 新增 `pickle_compat` 兼容层。
+  - 转换器能处理 develop 生成的旧数据，往返误差：root 为 0，DOF 不超过 8.9e-8。
+  - 修了 `BodyConstraint`、`save_ms_file`、contact 回退这几个 bug。
+  - 另外发现并修了一个 bug：`MotionLib.from_frames` 把 fps 当成 dt 传入，导致 DOF 速度错误，develop 上同样有这个问题。
+  - 80 个测试。
+- **Lane B**
+  - `FuturePoseDMPPOAgent`/`FuturePoseDMPPOModel`，修好了 DB1 和 DB2。
+  - state_dict 的 key 和形状与 develop C 代完全一致，输出差异不超过 5e-7。
+  - NaN 时以非零状态退出。
+  - 58 个测试。
+- **集成冒烟**（合并后的 `develop_migration`，GPU）：人形 civilization 场景用 `FuturePoseDMPPOAgent` 训练 40 次迭代，Predictor_Loss 降到 0.0026；`--test_predictor` 测试正常。
 
 ---
 
