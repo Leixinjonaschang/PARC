@@ -1,0 +1,138 @@
+"""Regenerate learning_develop_genC_keys.json from develop's tracker learning stack.
+
+The fixture records the {state_dict key: shape} layout of a generation-C tracker checkpoint
+(doc/porting_plan.md, Appendix F): develop's DMPPOAgent built with develop's
+PARC/tracker_config/dm_agent_g1.yaml on a fake env that reports the G1 observation contract
+(Appendix A). tests/test_learning_future_pose.py checks that the port produces the same layout,
+so generation-C checkpoints load into FuturePoseDMPPOAgent.
+
+This script imports develop's flat-layout modules, so run it with the interpreter of a develop
+checkout (torch 1.13 venv), not with the port's environment:
+
+    PYTHONDONTWRITEBYTECODE=1 <develop>/.venv/bin/python \\
+        tests/fixtures/learning_make_develop_genC_keys.py <develop checkout> [out.json]
+
+Nothing is written into the develop checkout. IsaacGym is not needed: develop's dm_ppo_agent
+imports the IsaacGym env module only for a type annotation, so that module is stubbed.
+"""
+import collections
+import json
+import os
+import subprocess
+import sys
+import types
+
+# G1 observation contract (doc/porting_plan.md, Appendix A): key -> (shape, use_normalizer).
+G1_OBS_SHAPES = [
+    ("char_obs", (266,), True),
+    ("tar_obs", (6, 234), True),
+    ("tar_contacts", (6, 36), False),
+    ("char_contacts", (36,), False),
+    ("hf", (441,), False),
+]
+G1_NUM_BODIES = 36
+G1_ACTION_SIZE = 29
+
+
+def _write_json(fixture, f):
+    # Like json.dump(indent=2), but with each dict entry on one line, so that shape lists stay compact.
+    items = list(fixture.items())
+    f.write("{\n")
+    for i, (key, val) in enumerate(items):
+        sep = "," if i < len(items) - 1 else ""
+        if isinstance(val, dict):
+            f.write("  {}: {{\n".format(json.dumps(key)))
+            sub_items = list(val.items())
+            for j, (sub_key, sub_val) in enumerate(sub_items):
+                sub_sep = "," if j < len(sub_items) - 1 else ""
+                f.write("    {}: {}{}\n".format(json.dumps(sub_key), json.dumps(sub_val), sub_sep))
+            f.write("  }}{}\n".format(sep))
+        else:
+            f.write("  {}: {}{}\n".format(json.dumps(key), json.dumps(val), sep))
+    f.write("}\n")
+    return
+
+
+def main(argv):
+    if len(argv) < 2:
+        print(__doc__)
+        return 1
+
+    develop_root = os.path.abspath(argv[1])
+    default_out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "learning_develop_genC_keys.json")
+    out_file = os.path.abspath(argv[2]) if len(argv) > 2 else default_out
+    sys.path.insert(0, develop_root)
+
+    import gym
+    import numpy as np
+    import torch
+    import yaml
+
+    import envs.ig_parkour
+    stub = types.ModuleType("envs.ig_parkour.ig_parkour_env")
+    stub.IGParkourEnv = object
+    sys.modules[stub.__name__] = stub
+    envs.ig_parkour.ig_parkour_env = stub
+
+    import learning.dm_ppo_agent as dm_ppo_agent
+
+    class FakeKinCharModel:
+        def get_num_joints(self):
+            return G1_NUM_BODIES
+
+    class FakeG1Env:
+        NAME = "ig_parkour"
+
+        def __init__(self, num_envs, device):
+            self._num_envs = num_envs
+            self._device = device
+            self._report_tracking_error = False
+            self._kin_char_model = FakeKinCharModel()
+            ones = np.ones(G1_ACTION_SIZE, dtype=np.float32)
+            self._action_space = gym.spaces.Box(low=-ones, high=ones, dtype=np.float32)
+
+        def _compute_obs(self, env_ids=None, ret_obs_shapes=False):
+            assert ret_obs_shapes
+            obs_shapes = collections.OrderedDict()
+            for key, shape, use_normalizer in G1_OBS_SHAPES:
+                obs_shapes[key] = {"use_normalizer": use_normalizer, "shape": torch.Size(shape)}
+            return obs_shapes
+
+        def get_obs_space(self):
+            obs_dim = sum(int(np.prod(shape)) for _, shape, _ in G1_OBS_SHAPES)
+            return gym.spaces.Box(low=-np.inf, high=np.inf, shape=(obs_dim,), dtype=np.float32)
+
+        def get_action_space(self):
+            return self._action_space
+
+        def get_num_envs(self):
+            return self._num_envs
+
+    agent_file = os.path.join(develop_root, "PARC", "tracker_config", "dm_agent_g1.yaml")
+    with open(agent_file, "r") as f:
+        agent_config = yaml.safe_load(f)
+
+    agent = dm_ppo_agent.DMPPOAgent(config=agent_config, env=FakeG1Env(num_envs=4, device="cpu"), device="cpu")
+    state_dict_shapes = collections.OrderedDict(
+        (key, list(val.shape)) for key, val in agent.state_dict().items())
+
+    develop_commit = subprocess.check_output(["git", "-C", develop_root, "rev-parse", "HEAD"]).decode().strip()
+    fixture = collections.OrderedDict([
+        ("description", "state_dict key -> shape of develop's generation-C tracker agent "
+                        "(DMPPOAgent + PARC/tracker_config/dm_agent_g1.yaml) on the G1 obs contract. "
+                        "Generated by tests/fixtures/learning_make_develop_genC_keys.py."),
+        ("develop_commit", develop_commit),
+        ("torch_version", torch.__version__),
+        ("obs_shapes", collections.OrderedDict((key, list(shape)) for key, shape, _ in G1_OBS_SHAPES)),
+        ("action_size", G1_ACTION_SIZE),
+        ("state_dict_shapes", state_dict_shapes),
+    ])
+    with open(out_file, "w") as f:
+        _write_json(fixture, f)
+
+    print("Wrote {:d} state_dict entries to {:s}".format(len(state_dict_shapes), out_file))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

@@ -56,13 +56,6 @@ def test(agent, test_episodes):
             Logger.print(key + ": {}".format(result[key]))
     return result
 
-def test2(agent, test_episodes):
-    result = agent.test_model2(num_episodes=test_episodes)
-    Logger.print("Mean Return: {}".format(result["mean_return"]))
-    Logger.print("Mean Episode Length: {}".format(result["mean_ep_len"]))
-    Logger.print("Episodes: {}".format(result["num_eps"]))
-    return result
-
 def create_output_dirs(out_model_file, int_output_dir):
     output_dir = os.path.dirname(out_model_file)
     if (output_dir != "" and (not os.path.exists(output_dir))):
@@ -116,6 +109,16 @@ def run(args):
     if (model_file != ""):
         agent.load(path_loader.resolve_path(model_file))
 
+    test_predictor = args.parse_bool("test_predictor", False)
+    if (test_predictor):
+        # The actor uses the future-pose predictor's latent instead of the encoder's.
+        if (mode == "train"):
+            raise ValueError("--test_predictor is only supported in test and record modes.")
+        if (not hasattr(agent, "set_predictor_test_mode")):
+            raise ValueError("--test_predictor needs an agent config with obs_encoders and a future-pose predictor.")
+        Logger.print("Predictor test mode: the actor uses the predicted future-pose latent.")
+        agent.set_predictor_test_mode(True)
+
     if (mode == "train"):
         max_samples = args.parse_int("max_samples", np.iinfo(np.int64).max)
         train(agent=agent, max_samples=max_samples, out_model_file=out_model_file,
@@ -125,9 +128,6 @@ def run(args):
         test(agent=agent, test_episodes=test_episodes)
     elif (mode == "record"):
         record_dm_motions(agent)
-    elif (mode == "test2"):
-        test_episodes = args.parse_int("test_episodes", np.iinfo(np.int64).max)
-        test2(agent=agent, test_episodes=test_episodes)
     else:
         assert(False), "Unsupported mode: {}".format(mode)
 

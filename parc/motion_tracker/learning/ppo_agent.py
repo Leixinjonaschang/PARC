@@ -1,3 +1,4 @@
+import os
 import pickle
 
 import numpy as np
@@ -9,7 +10,9 @@ import parc.motion_tracker.learning.ppo_model as ppo_model
 import parc.motion_tracker.learning.rl_util as rl_util
 import parc.util.torch_util as torch_util
 from parc.motion_tracker.learning.base_agent import AgentMode
+from parc.util.logger import Logger
 
+# Enables the NaN checks on the training data (_check_nan). Each check synchronizes with the GPU.
 NANCHECK = True
 
 class PPOAgent(base_agent.BaseAgent):
@@ -81,6 +84,14 @@ class PPOAgent(base_agent.BaseAgent):
         self._exp_buffer.reset()
         return
 
+    def _check_nan(self, tensor, name):
+        # Raising (rather than exit()) makes the process exit with a non-zero status.
+        if (NANCHECK):
+            num_nan = torch.count_nonzero(torch.isnan(tensor)).item()
+            if (num_nan > 0):
+                raise FloatingPointError("NaN in {:s}: {:d}/{:d} entries".format(name, num_nan, tensor.numel()))
+        return
+
     def _decide_action(self, obs, info):
         norm_obs = self._obs_norm.normalize(obs)
         norm_action_dist = self._model.eval_actor(norm_obs)
@@ -131,8 +142,13 @@ class PPOAgent(base_agent.BaseAgent):
         rand_action_mask = self._exp_buffer.get_data("rand_action_mask")
         
         norm_next_obs = self._obs_norm.normalize(next_obs)
+        self._check_nan(obs, "obs")
+        self._check_nan(norm_next_obs, "norm_next_obs")
+        self._check_nan(r, "reward")
+
         next_vals = self._model.eval_critic(norm_next_obs)
         next_vals = next_vals.squeeze(-1).detach()
+        self._check_nan(next_vals, "next_vals")
 
         val_min, val_max = self._compute_val_bound()
         next_vals = torch.clamp(next_vals, val_min, val_max)
@@ -146,15 +162,22 @@ class PPOAgent(base_agent.BaseAgent):
         next_vals[fail_mask] = fail_val
 
         new_vals = rl_util.compute_td_lambda_return(r, next_vals, done, self._discount, self._td_lambda)
+        self._check_nan(new_vals, "new_vals (TD returns)")
 
         norm_obs = self._obs_norm.normalize(obs)
         vals = self._model.eval_critic(norm_obs)
         vals = vals.squeeze(-1).detach()
+        self._check_nan(vals, "vals (critic output)")
         adv = new_vals - vals
+        self._check_nan(adv, "raw advantage")
         
         rand_action_mask = (rand_action_mask == 1.0).flatten()
         adv_flat = adv.flatten()
         rand_action_adv = adv_flat[rand_action_mask]
+        if (rand_action_adv.numel() == 0):
+            # The advantage statistics of an empty selection would be NaN.
+            Logger.print("Warning: no random actions in the batch, normalizing advantages over all samples")
+            rand_action_adv = adv_flat
         adv_std, adv_mean = torch.std_mean(rand_action_adv)
         norm_adv = (adv - adv_mean) / torch.clamp_min(adv_std, 1e-5)
         norm_adv = torch.clamp(norm_adv, -self._norm_adv_clip, self._norm_adv_clip)
@@ -241,12 +264,14 @@ class PPOAgent(base_agent.BaseAgent):
             print("critic loss:", critic_loss)
             print("actor loss:", actor_loss)
             batch_file = "output/debug_batch.pkl"
+            os.makedirs(os.path.dirname(batch_file), exist_ok=True)
             with open(batch_file, "wb") as f:
                 pickle.dump(batch, f)
 
             print("wrote debug batch file to:", batch_file)
-            print("Exiting program.")
-            exit()
+            # exit() would end the process with status 0, so a failed run would look successful.
+            raise FloatingPointError("NaN loss (critic loss: {}, actor loss: {})".format(critic_loss.item(),
+                                                                                        actor_loss.item()))
             
         loss = actor_loss + self._critic_loss_weight * critic_loss
 
