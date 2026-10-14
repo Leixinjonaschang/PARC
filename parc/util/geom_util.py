@@ -787,6 +787,54 @@ def get_capsule_point_surface_samples(
     capsule_points = torch.cat(capsule_points, dim=0)
     return capsule_points
 
+def get_mesh_aabb_corner_samples(mesh_bounds, device):
+    """
+    Generate 8 corner points from mesh AABB bounds.
+    mesh_bounds: (2, 3) numpy array [min_xyz, max_xyz]
+    """
+    min_xyz = mesh_bounds[0]
+    max_xyz = mesh_bounds[1]
+
+    x = [min_xyz[0], max_xyz[0]]
+    y = [min_xyz[1], max_xyz[1]]
+    z = [min_xyz[2], max_xyz[2]]
+
+    corners = np.array([[ix, iy, iz] for ix in x for iy in y for iz in z])
+    mesh_points = torch.tensor(corners, dtype=torch.float32, device=device)
+
+    return mesh_points
+
+def get_mesh_capsule_corner_samples(mesh_bounds, device):
+    """
+    Generate 2 sample points along the longest axis of the mesh AABB,
+    mimicking a capsule approximation.
+    mesh_bounds: (2, 3) numpy array [min_xyz, max_xyz]
+    """
+    min_xyz = mesh_bounds[0]
+    max_xyz = mesh_bounds[1]
+
+    # Calculate dimensions and center
+    dims = max_xyz - min_xyz
+    center = (min_xyz + max_xyz) / 2.0
+
+    # Find the longest axis
+    longest_axis_idx = np.argmax(dims)
+    half_length = dims[longest_axis_idx] / 2.0
+
+    # Step back from the AABB faces (0.8 * half_length) so the points stay inside,
+    # like capsule points
+    offset_val = half_length * 0.8
+
+    p1 = center.copy()
+    p2 = center.copy()
+
+    p1[longest_axis_idx] += offset_val
+    p2[longest_axis_idx] -= offset_val
+
+    mesh_points = torch.tensor(np.stack([p1, p2]), dtype=torch.float32, device=device)
+
+    return mesh_points
+
 def get_char_point_samples(char_model: kin_char_model.KinCharModel,
                            sphere_num_subdivisions = 0,
                            box_num_slices = 2,
@@ -873,6 +921,9 @@ def get_char_point_samples(char_model: kin_char_model.KinCharModel,
 
 
 def get_minimal_char_point_samples(char_model: kin_char_model.KinCharModel):
+    # Returns one [k_b >= 1, 3] float32 tensor per body (body frame, on char_model._device).
+    # Meshes contribute 2 points along their AABB's longest axis, cylinders their center,
+    # and bodies without geoms a single point at the body origin.
 
     all_points = []
     device = char_model._device
@@ -924,8 +975,30 @@ def get_minimal_char_point_samples(char_model: kin_char_model.KinCharModel):
                                                            dim_y=2)
                 box_points = box_points + offset
                 curr_body_points.append(box_points)
+            elif geom._shape_type == kin_char_model.GeomType.MESH:
+                meshes = getattr(char_model, "_meshes", None)
+                mesh_name = geom._mesh_name
+                if meshes is not None and mesh_name in meshes:
+                    mesh_points = get_mesh_capsule_corner_samples(meshes[mesh_name].bounds, device)
+
+                    # mesh vertices are in the geom frame: apply the geom's rotation, then its offset
+                    if geom._quat is not None:
+                        quat = torch.as_tensor(geom._quat, dtype=torch.float32, device=device)
+                        mesh_points = torch_util.quat_rotate(quat.unsqueeze(0), mesh_points)
+                    mesh_points = mesh_points + geom._offset
+                else:
+                    # mesh not loaded, use the geom's offset
+                    mesh_points = geom._offset.clone().unsqueeze(0)
+                curr_body_points.append(mesh_points)
+            elif geom._shape_type == kin_char_model.GeomType.CYLINDER:
+                # TODO: sample along the cylinder axis; only its center for now
+                curr_body_points.append(geom._offset.clone().unsqueeze(0))
             else:
-                assert False
+                assert False, "Unsupported geom type: {}".format(geom._shape_type)
+
+        if len(curr_body_points) == 0:
+            zero_point = torch.zeros(size=[1, 3], dtype=torch.float32, device=device)
+            curr_body_points.append(zero_point)
 
         curr_body_points = torch.cat(curr_body_points, dim=0)
         total_num_points += curr_body_points.shape[0]
