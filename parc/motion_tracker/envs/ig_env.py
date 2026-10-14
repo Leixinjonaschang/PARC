@@ -175,12 +175,6 @@ class IGEnv(base_env.BaseEnv):
             num_env_per_row = int(np.sqrt(self._num_envs))
             lower = gymapi.Vec3(-env_spacing, -env_spacing, 0.0)
             upper = gymapi.Vec3(env_spacing, env_spacing, env_spacing)
-            self._env_offsets = torch.zeros(size = (self._num_envs,3), dtype=torch.float32, device=self._device)
-            for i in range(self._num_envs):
-                curr_col = i % num_env_per_row
-                curr_row = i // num_env_per_row
-                self._env_offsets[i, 0] = env_spacing * 2 * curr_col
-                self._env_offsets[i, 1] = env_spacing * 2 * curr_row
 
             # create spawn boundaries
             self._spawn_max_x = self._env_spacing * 10.0
@@ -191,14 +185,17 @@ class IGEnv(base_env.BaseEnv):
             num_env_per_row = self._num_envs
             lower = gymapi.Vec3(-env_spacing, -env_spacing, 0.0)
             upper = gymapi.Vec3(env_spacing, env_spacing, env_spacing)
-            self._env_offsets = torch.zeros(size = (self._num_envs,3), dtype=torch.float32, device=self._device)
-            self._env_offsets[:, 0] = torch.arange(0, self._num_envs, 1, dtype=torch.float32, device=self._device) * config["env"]["env_spacing"] * 2.0
         else:
             assert False
-        
+
+        self._env_offsets = torch.zeros(size = (self._num_envs,3), dtype=torch.float32, device=self._device)
         for i in range(self._num_envs):
             Logger.print("Building {:d}/{:d} envs".format(i + 1, self._num_envs), end='\r')
             env_ptr = self._gym.create_env(self._sim, lower, upper, num_env_per_row)
+            # Take the offset from IsaacGym (as IGParkourEnv does): with one env per row (2 or 3 envs
+            # in the square style) it lays the envs out along x, which a grid formula gets wrong.
+            origin = self._gym.get_env_origin(env_ptr)
+            self._env_offsets[i] = torch.tensor([origin.x, origin.y, origin.z], dtype=torch.float32, device=self._device)
             self._build_env(i, env_ptr, config)
             self._envs.append(env_ptr)
 
