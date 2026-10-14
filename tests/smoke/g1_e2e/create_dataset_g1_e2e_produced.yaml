@@ -1,0 +1,17 @@
+# G1 end-to-end smoke, step 7: dataset yaml of the motions the iteration produced: the stage 2
+# kinematic motions and the stage 4 recordings (the real record run, which may have recorded
+# nothing, and the record run without early termination, see README.md).
+# create_dataset re-saves every motion file it reads, in place, with its hf_mask_inds.
+save_path: "$DATA_DIR/g1_e2e/iter_1/produced_motions.yaml"
+folder_paths:
+- "$DATA_DIR/g1_e2e/iter_1/p2_kin_gen/"
+- "$DATA_DIR/g1_e2e/iter_1/p4_phys_record/recorded_motions/"
+- "$DATA_DIR/g1_e2e/iter_1/p4_phys_record_no_et/recorded_motions/"
+char_filepath: "data/assets/unitree_g1/g1_mocap_29dof.xml"
+compute_preprocessing_data: true
+override_old_hf_mask_inds: false
+cut_some_classes_in_half: false
+motion_classes_to_cut_in_half: []
+max_terrain_dim_x: 45
+max_terrain_dim_y: 45
+min_num_frames: 16

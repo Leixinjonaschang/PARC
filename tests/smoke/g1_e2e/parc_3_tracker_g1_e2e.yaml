@@ -1,0 +1,14 @@
+# G1 end-to-end smoke, stage 3: a few FuturePoseDMPPOAgent iterations on the G1 env.
+# Uses the G1 env and agent configs unchanged. parc_0_setup_iter.py writes the stage config
+# from this file and sets output_dir, in_model_file, dataset_file, create_dataset_config and
+# env_config (p3_tracker/input_dm_env.yaml: dm_env_g1.yaml with the setup config's char_file).
+env_config: "data/configs/tracker_config/dm_env_g1.yaml"
+agent_config: "data/configs/tracker_config/dm_agent_g1.yaml"
+output_dir: "$DATA_DIR/g1_e2e/iter_1/p3_tracker/"
+num_envs: 32
+# 32 envs x 32 steps = 1024 samples per iteration, so this runs 5 iterations. dm_agent_g1.yaml
+# writes model.pt at iteration 0 (and every 200), so model.pt holds the iteration-0 weights.
+max_samples: 5120
+device: "cuda:0"
+dataset_file: "$DATA_DIR/g1_e2e/iter_1/p3_tracker/motions.yaml"
+in_model_file: null
