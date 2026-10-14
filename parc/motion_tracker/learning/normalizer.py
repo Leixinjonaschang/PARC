@@ -1,8 +1,6 @@
 import numpy as np
 import torch
 
-from parc.util.logger import Logger
-
 
 class Normalizer(torch.nn.Module):
     def __init__(self, shape, device, init_mean=None, init_std=None, min_std=1e-4, clip=np.inf, dtype=torch.float, non_norm_indices=None):
@@ -70,7 +68,7 @@ class Normalizer(torch.nn.Module):
         shape = self.get_shape()
         
         assert mean.shape == shape and std.shape == shape, \
-            Logger.print("Normalizer shape mismatch, expecting size {:d}, but got {:d} and {:d}".format(shape, mean.shape, std.shape))
+            "Normalizer shape mismatch, expecting size {}, but got {} and {}".format(shape, mean.shape, std.shape)
         
         self._mean[:] = mean
         self._std[:] = std
@@ -105,12 +103,12 @@ class Normalizer(torch.nn.Module):
 
         if init_mean is not None:
             assert init_mean.shape == shape, \
-            Logger.print('Normalizer init mean shape mismatch, expecting {:d}, but got {:d}'.shape(shape, init_mean.shape))
+            'Normalizer init mean shape mismatch, expecting {}, but got {}'.format(shape, init_mean.shape)
             self._mean[:] = init_mean
 
         if init_std is not None:
             assert init_std.shape == shape, \
-            Logger.print('Normalizer init std shape mismatch, expecting {:d}, but got {:d}'.format(shape, init_std.shape))
+            'Normalizer init std shape mismatch, expecting {}, but got {}'.format(shape, init_std.shape)
             # Same floor as _calc_std, so that e.g. an action dimension with low == high
             # cannot cause a division by zero in normalize().
             self._std[:] = torch.clamp_min(init_std, self._min_std)
