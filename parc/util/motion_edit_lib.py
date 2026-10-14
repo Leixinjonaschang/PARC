@@ -286,16 +286,16 @@ def create_terrain_for_motion(motion_frames: motion_util.MotionFrames,
 
     root_pos = motion_frames.root_pos
 
-    max_root_x = torch.max(root_pos[:, 0]).item()
-    max_root_y = torch.max(root_pos[:, 1]).item()
-    min_root_x = torch.min(root_pos[:, 0]).item()
-    min_root_y = torch.min(root_pos[:, 1]).item()
-    # first frame root xy is (0, 0)
+    # The grid is anchored at the first frame's root xy (see min_x below), so its extent is
+    # measured from there, not from the xy origin.
+    rel_root_xy = root_pos[:, 0:2] - root_pos[0:1, 0:2]
+    max_rel_x, max_rel_y = torch.max(rel_root_xy, dim=0)[0].tolist() # >= 0
+    min_rel_x, min_rel_y = torch.min(rel_root_xy, dim=0)[0].tolist() # <= 0
 
-    num_pos_x = int(abs(round(max_root_x / dx))) + num_padding
-    num_neg_x = int(abs(round(min_root_x / dx))) + num_padding
-    num_pos_y = int(abs(round(max_root_y / dx))) + num_padding
-    num_neg_y = int(abs(round(min_root_y / dx))) + num_padding
+    num_pos_x = int(round(max_rel_x / dx)) + num_padding
+    num_neg_x = int(round(-min_rel_x / dx)) + num_padding
+    num_pos_y = int(round(max_rel_y / dx)) + num_padding
+    num_neg_y = int(round(-min_rel_y / dx)) + num_padding
 
     # Now we will deterministically construct a heightfield, so that we can use a heightfield
     # contact function to compute foot contacts and fix foot penetrations

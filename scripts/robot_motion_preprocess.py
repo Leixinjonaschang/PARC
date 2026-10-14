@@ -480,16 +480,11 @@ def compute_body_constraints(frames: torch.Tensor, contacts: torch.Tensor, char_
 
 
 def create_flat_terrain(frames: torch.Tensor, char_model: kin_char_model.KinCharModel, device) -> terrain_util.SubTerrain:
-    # create_terrain_for_motion sizes the grid as if the first root position were at the
-    # xy origin, so build it for the motion moved there and move the terrain back.
-    anchor = frames[0, 0:2].clone()
-    root_pos = frames[:, 0:3].clone()
-    root_pos[:, 0:2] -= anchor
-    terrain = motion_edit_lib.create_terrain_for_motion(motion_util.MotionFrames(root_pos=root_pos), char_model,
+    # flat ground under the motion, FLAT_TERRAIN_PADDING beyond its root positions
+    terrain = motion_edit_lib.create_terrain_for_motion(motion_util.MotionFrames(root_pos=frames[:, 0:3]), char_model,
                                                         char_points=None, dx=FLAT_TERRAIN_DX,
                                                         padding=FLAT_TERRAIN_PADDING)
     terrain.set_device(device)
-    terrain.min_point = terrain.min_point + anchor
     return terrain
 
 
