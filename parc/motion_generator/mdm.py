@@ -1232,7 +1232,12 @@ class MDM(MotionGenerator):
         obj._device = device
 
         if use_ema_model and obj.use_ema:
-            print("Using ema model...")
-            obj._denoise_model = obj._ema_denoise_model
+            # Without saved EMA weights, _ema_denoise_model is still the untrained copy
+            # made in __init__, so keep the trained weights instead.
+            if "ema_model" in checkpoint:
+                print("Using ema model...")
+                obj._denoise_model = obj._ema_denoise_model
+            else:
+                print("Checkpoint has no EMA weights, using the regular model:", checkpoint_path)
 
         return obj
