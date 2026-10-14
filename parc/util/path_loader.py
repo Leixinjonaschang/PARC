@@ -4,6 +4,7 @@ from pathlib import Path
 import yaml
 
 DATA_DIR_KEY = "DATA_DIR"
+DATA_DIR_ENV_VAR = "PARC_DATA_DIR"
 DATA_PLACEHOLDER = "$DATA_DIR"
 USER_CONFIG_FILENAME = "data/configs/user_config.yaml"
 
@@ -17,11 +18,18 @@ def _resolve_user_config_path() -> Path:
 
 
 def _load_data_dir() -> Path:
-    user_config_path = _resolve_user_config_path()
-    user_config = yaml.safe_load(user_config_path.read_text()) or {}
-    if DATA_DIR_KEY not in user_config:
-        assert False, f"DATA_DIR not set in {user_config_path}."
-    data_dir = Path(os.path.expandvars(str(user_config[DATA_DIR_KEY]))).expanduser()
+    # The PARC_DATA_DIR environment variable takes precedence over the tracked
+    # user_config.yaml, so each machine can set its own path without editing it.
+    env_data_dir = os.environ.get(DATA_DIR_ENV_VAR)
+    if env_data_dir:
+        raw_data_dir = env_data_dir
+    else:
+        user_config_path = _resolve_user_config_path()
+        user_config = yaml.safe_load(user_config_path.read_text()) or {}
+        if DATA_DIR_KEY not in user_config:
+            assert False, f"DATA_DIR not set in {user_config_path} (or set {DATA_DIR_ENV_VAR})."
+        raw_data_dir = user_config[DATA_DIR_KEY]
+    data_dir = Path(os.path.expandvars(str(raw_data_dir))).expanduser()
     if not data_dir.is_absolute():
         assert False, "DATA_DIR must be an absolute path."
     if not data_dir.exists():

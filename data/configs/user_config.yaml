@@ -1,4 +1,6 @@
 # User-specific configuration values.
 # Set DATA_DIR to the absolute path where your datasets, checkpoints,
 # and experiment outputs should be stored or found.
+# The PARC_DATA_DIR environment variable overrides this value
+# (e.g. `export PARC_DATA_DIR=/path/to/data`), so you don't need to edit this file.
 DATA_DIR: "/Users/mxu/Projects/"
