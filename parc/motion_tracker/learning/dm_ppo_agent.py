@@ -12,6 +12,7 @@ import parc.motion_tracker.learning.ppo_agent as ppo_agent
 import parc.motion_tracker.learning.rl_util as rl_util
 import parc.motion_tracker.learning.tracking_error_tracker as tracking_error_tracker
 import parc.util.torch_util as torch_util
+from parc.util.logger import Logger
 
 
 class DMPPOAgent(ppo_agent.PPOAgent):
@@ -251,10 +252,12 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         compute_time_buffer = torch.zeros(size=[buffer_length, batch_size], dtype=torch.float32, device=self._device)
         self._exp_buffer.add_buffer("compute_time", compute_time_buffer)
         
-        prev_contact_force_buffer = torch.zeros(size=[buffer_length, batch_size, 15, 3], dtype=torch.float32, device=self._device)
+        # One force per character body: [num_bodies, 3] (15 bodies for the humanoid, 36 for G1).
+        contact_force_shape = list(self._env._char_contact_forces.shape[1:])
+        prev_contact_force_buffer = torch.zeros(size=[buffer_length, batch_size] + contact_force_shape, dtype=torch.float32, device=self._device)
         self._exp_buffer.add_buffer("prev_char_contact_forces", prev_contact_force_buffer)
 
-        next_contact_force_buffer = torch.zeros(size=[buffer_length, batch_size, 15, 3], dtype=torch.float32, device=self._device)
+        next_contact_force_buffer = torch.zeros(size=[buffer_length, batch_size] + contact_force_shape, dtype=torch.float32, device=self._device)
         self._exp_buffer.add_buffer("next_char_contact_forces", next_contact_force_buffer)
 
         env_id_buffer = torch.zeros(size=[buffer_length, batch_size], dtype=torch.int64, device=self._device)
@@ -293,6 +296,9 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         rand_action_mask = self._exp_buffer.get_data("rand_action_mask")
         
         norm_next_obs = self._obs_norm.normalize(next_obs)
+        self._check_nan(obs, "obs")
+        self._check_nan(norm_next_obs, "norm_next_obs")
+        self._check_nan(r, "reward")
 
         ## FOR TRANSFORMER and CNN ##
         # split eval critic into smaller batches because transformer can't take it all in memory
@@ -305,6 +311,7 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         ## FOR MLP ##
         next_vals = self._model.eval_critic(norm_next_obs)
         next_vals = next_vals.squeeze(-1).detach()
+        self._check_nan(next_vals, "next_vals")
 
         val_min, val_max = self._compute_val_bound()
         next_vals = torch.clamp(next_vals, val_min, val_max)
@@ -318,6 +325,7 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         next_vals[fail_mask] = fail_val
 
         new_vals = rl_util.compute_td_lambda_return(r, next_vals, done, self._discount, self._td_lambda)
+        self._check_nan(new_vals, "new_vals (TD returns)")
 
         norm_obs = self._obs_norm.normalize(obs)
 
@@ -331,13 +339,19 @@ class DMPPOAgent(ppo_agent.PPOAgent):
         ## FOR MLP ##
         vals = self._model.eval_critic(norm_obs)
         vals = vals.squeeze(-1).detach()
+        self._check_nan(vals, "vals (critic output)")
 
 
         adv = new_vals - vals
+        self._check_nan(adv, "raw advantage")
         
         rand_action_mask = (rand_action_mask == 1.0).flatten()
         adv_flat = adv.flatten()
         rand_action_adv = adv_flat[rand_action_mask]
+        if (rand_action_adv.numel() == 0):
+            # The advantage statistics of an empty selection would be NaN.
+            Logger.print("Warning: no random actions in the batch, normalizing advantages over all samples")
+            rand_action_adv = adv_flat
         adv_std, adv_mean = torch.std_mean(rand_action_adv)
         norm_adv = (adv - adv_mean) / torch.clamp_min(adv_std, 1e-5)
         norm_adv = torch.clamp(norm_adv, -self._norm_adv_clip, self._norm_adv_clip)
