@@ -1207,6 +1207,9 @@ def update_dir_mesh():
 
 terrain_manager = TerrainMeshManager()
 
+# motion name -> (obs, obs_shapes) recorded with the motion (run_tracker --mode record, parc_4)
+g_recorded_obs = dict()
+
 for file_idx in range(len(g_motion_filepaths)):
     elem = g_motion_filepaths[file_idx]
     motion_filepath = elem[0]
@@ -1230,7 +1233,17 @@ for file_idx in range(len(g_motion_filepaths)):
                     misc_data["path_nodes"] = torch.from_numpy(misc_data["path_nodes"])
                 PathPlanningSettings().path_nodes = misc_data["path_nodes"].to(dtype=torch.float32, device=MainVars().device)
                 PathPlanningSettings().visualize_path_nodes("ASTARpath", PathPlanningSettings().path_nodes)
+            if "obs" in misc_data and "obs_shapes" in misc_data:
+                g_recorded_obs[os.path.basename(motion_filepath)] = (misc_data["obs"], misc_data["obs_shapes"])
 MotionManager().set_curr_motion(os.path.basename(g_motion_browser_path))
+
+# The obs viewer (IGObsSettings, ig_obs_gui) shows the recorded obs of the current motion. It decodes
+# them with misc_util.extract_obs and inverse_tar_obs, which read the humanoid's 14 joint rotations.
+if os.path.basename(g_motion_browser_path) in g_recorded_obs:
+    if MotionManager().get_curr_motion().mlib._kin_char_model.get_num_joints() - 1 == 14:
+        IGObsSettings().setup(*g_recorded_obs[os.path.basename(g_motion_browser_path)])
+    else:
+        print("Not showing the recorded obs: the obs viewer only decodes the humanoid's obs layout")
 
 g_kin_controller = None
 

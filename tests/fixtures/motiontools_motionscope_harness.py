@@ -183,6 +183,11 @@ elif SCENARIO == "path_mdm":
 elif SCENARIO == "draw_all":
     open_guis(*EDITING_GUIS, "mdm", "ig_obs", "isaac_gym", "kin_controller", "help")
     frames(3, step="every GUI open")
+elif SCENARIO == "obs":
+    # a motion with recorded obs in its misc_data
+    print("HARNESS: has_obs:", g.IGObsSettings().has_obs)
+    open_guis("time", "ig_obs", "recording")
+    frames(3, step="obs GUI open")
 else:
     raise ValueError(SCENARIO)
 
