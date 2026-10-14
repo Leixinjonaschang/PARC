@@ -13,4 +13,6 @@ output*/
 imgui.ini
 data/assets/smplx/*
 *.DS_store
-*.egg_info
+*.egg-info/
+.venv/
+build/
