@@ -9,7 +9,6 @@ import torch
 
 import parc.anim.kin_char_model as kin_char_model
 import parc.anim.motion_lib as motion_lib
-import parc.motion_synthesis.motion_opt.motion_optimization as moopt
 import parc.util.file_io as file_io
 import parc.util.file_io_helper as file_io_helper
 import parc.util.geom_util as geom_util
@@ -20,6 +19,24 @@ import parc.util.torch_util as torch_util
 
 # A library of functions that edits motion data
 # for simplicity assume everything is a torch tensor (so we can use other torch util functions)
+
+def _require_geom_types(char_model: kin_char_model.KinCharModel, body_id, geom_types, purpose, all_geoms=False):
+    """Returns the geoms of ``body_id`` after checking that the first one (or, with
+    ``all_geoms``, every one) has a type in ``geom_types``.
+
+    The foot and hand contact helpers below model feet as boxes and hands as spheres, as
+    in the humanoid. Characters whose feet or hands start with a mesh geom (e.g. the
+    Unitree G1) would otherwise get silently wrong contacts, so they are rejected.
+    """
+    geoms = char_model.get_geoms(body_id)
+    checked = geoms if all_geoms else geoms[:1]
+    found = [geom._shape_type.name for geom in checked]
+    if len(geoms) == 0 or any(geom._shape_type not in geom_types for geom in checked):
+        raise ValueError("{}: body '{}' needs {} geom(s), found {}. Only characters with box feet and "
+                         "sphere hands (like the humanoid) are supported, not mesh geoms such as the "
+                         "Unitree G1's.".format(purpose, char_model.get_body_name(body_id),
+                                                "/".join(t.name for t in geom_types), found or "none"))
+    return geoms
 
 class MotionData:
     def __init__(self, motion_data, device="cpu"):
@@ -65,24 +82,28 @@ class MotionData:
         return
     
     def set_hf_mask_inds_device(self, device):
-        for t in range(len(self._data["hf_mask_inds"])):
-            self._data["hf_mask_inds"][t] = self._data["hf_mask_inds"][t].to(device=device)
+        hf_mask_inds = self._data["hf_mask_inds"]
+        for t in range(len(hf_mask_inds)):
+            if isinstance(hf_mask_inds[t], np.ndarray): # develop saved these as numpy arrays
+                hf_mask_inds[t] = torch.from_numpy(hf_mask_inds[t])
+            hf_mask_inds[t] = hf_mask_inds[t].to(device=device)
         return
-    
+
     def set_device(self, device):
         self._device = device
-        for key in self._data:
-            if key == "fps" or key == "loop_mode" or "target_xy":
+        for key, value in self._data.items():
+            if key in ("fps", "loop_mode", "target_xy"):
                 continue
 
             if key == "hf_mask_inds":
                 self.set_hf_mask_inds_device(device)
-
             elif key == "terrain":
-                self._data[key].set_device(device)
-            else:
-                print(key, device)
-                self._data[key] = self._data[key].to(device=device)
+                value.set_device(device)
+            elif key == "opt:body_constraints":
+                self._data[key] = file_io_helper.torchify_body_constraints(value, device)
+            elif isinstance(value, torch.Tensor):
+                self._data[key] = value.to(device=device)
+            # anything else (numbers, strings, numpy arrays such as "obs") stays as it is
         return
 
     def get_fps(self):
@@ -165,6 +186,9 @@ class MotionData:
         if "hf_mask_inds" in self._data:
             kwargs["hf_mask_inds"] = self._data["hf_mask_inds"]
 
+        if self.has_opt_body_constraints():
+            kwargs[file_io_helper.BODY_CONSTRAINTS_KEY] = self.get_opt_body_constraints()
+
         if verbose:
             print("Saving to", motion_filepath)
 
@@ -207,7 +231,7 @@ def save_motion_data(motion_filepath, motion_frames, contact_frames,
                      **kwargs):
     warnings.warn(
         "save_motion_data is deprecated and will be removed in a future release. "
-        "Use new_function() instead.",
+        "Use parc.util.file_io_helper.save_ms_file() instead.",
         DeprecationWarning,
         stacklevel=2,
     )
@@ -238,10 +262,13 @@ def save_motion_data(motion_filepath, motion_frames, contact_frames,
 
     for key, value in kwargs.items():
         if isinstance(value, torch.Tensor):
-            data[key] = value.cpu().numpy()
-        elif key == "opt:body_constraints":
-            save_data = moopt.body_constraint_to_numpy_recursive(value)
-            data[key] = save_data
+            data[key] = value.detach().cpu().numpy()
+        elif key == file_io_helper.BODY_CONSTRAINTS_KEY:
+            # same dict-of-numpy form as MS files; torchify_body_constraints reads it back
+            data[key] = file_io_helper.numpify_body_constraints(value)
+        elif isinstance(value, (list, tuple)) and any(isinstance(v, torch.Tensor) for v in value):
+            # e.g. hf_mask_inds (a list of tensors): store numpy so no device ends up in the pickle
+            data[key] = [v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else v for v in value]
         else:
             data[key] = value
 
@@ -460,7 +487,8 @@ def compute_ground_plane_foot_contacts(motion_frames, char_model: kin_char_model
         key_body_rot = body_rot[:, body_id]
 
         # Assume only 1 geom for feet
-        geom = char_model._geoms[body_id][0]
+        geom = _require_geom_types(char_model, body_id, [kin_char_model.GeomType.BOX],
+                                   "compute_ground_plane_foot_contacts")[0]
             
         geom_offset = geom._offset
         geom_dims = geom._dims
@@ -498,13 +526,14 @@ def compute_hf_foot_contacts_and_correct_pen(motion_frames, terrain: terrain_uti
 
     key_ids = [lf_id, rf_id]
 
-    pen_correction_z = torch.zeros(size=(num_frames,))
+    pen_correction_z = torch.zeros(size=(num_frames,), device=motion_frames.device)
     for body_id in key_ids:
         key_body_pos = body_pos[:, body_id]
         key_body_rot = body_rot[:, body_id]
 
         # Assume only 1 geom for feet
-        geom = char_model._geoms[body_id][0]
+        geom = _require_geom_types(char_model, body_id, [kin_char_model.GeomType.BOX],
+                                   "compute_hf_foot_contacts_and_correct_pen")[0]
             
         geom_offset = geom._offset
         geom_dims = geom._dims
@@ -556,7 +585,8 @@ def compute_motion_terrain_hand_contacts(motion_frames, terrain: terrain_util.Su
         key_body_pos = body_pos[:, body_id]
         #key_body_rot = body_rot[:, body_id]
 
-        geom = char_model._geoms[body_id][0]
+        geom = _require_geom_types(char_model, body_id, [kin_char_model.GeomType.SPHERE],
+                                   "compute_motion_terrain_hand_contacts")[0]
         geom_offset = geom._offset
         geom_dims = geom._dims
 
@@ -591,12 +621,13 @@ def correct_foot_ground_pen(motion_frames, char_model: kin_char_model.KinCharMod
     # Find the minimum foot box point with z < ground_height for all frames.
     # Then offset the motion by the negative of the minimum foot box points < ground_height
 
-    min_point_z = torch.ones(size=(num_frames,)) * ground_height
+    min_point_z = torch.ones(size=(num_frames,), device=motion_frames.device) * ground_height
     for body_id in key_ids:
         key_body_pos = body_pos[:, body_id]
         key_body_rot = body_rot[:, body_id]
 
-        for geom in char_model._geoms[body_id]:
+        for geom in _require_geom_types(char_model, body_id, [kin_char_model.GeomType.BOX],
+                                        "correct_foot_ground_pen", all_geoms=True):
             
             geom_offset = geom._offset
             geom_dims = geom._dims
@@ -758,11 +789,13 @@ def search_for_matching_motion_frames(
     return match_idx_A, match_idx_B, heading_diff, root_pos_diff
 
 def change_motion_fps(src_frames, src_fps, tar_fps, char_model: kin_char_model.KinCharModel):
+    # src_frames: legacy dof frames [num_frames, 6 + dof_size]; returns frames in the same format
 
     device = src_frames.device
 
-    # assumes the first index is the number of motions index
-    mlib = motion_lib.MotionLib(src_frames.unsqueeze(0), char_model, device, "motion_frames", loop_mode=motion_lib.LoopMode.CLAMP, fps=src_fps)
+    motion_frames = motion_util.motion_frames_from_mlib_format(src_frames, char_model)
+    mlib = motion_lib.MotionLib.from_frames(motion_frames, char_model, device,
+                                            loop_mode=motion_lib.LoopMode.CLAMP, fps=src_fps)
 
     tar_dt = 1.0 / tar_fps
     src_duration = mlib._motion_lengths[0].item()

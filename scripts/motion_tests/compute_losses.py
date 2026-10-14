@@ -1,65 +1,83 @@
-import sys
+"""Metrics of generated motions (e.g. mdm_validation_test outputs) per directory: distance
+of the last frame to the last path node, motion length, jerk, and contact/penetration losses.
+Writes one CSV row per directory.
 
-sys.path.insert(1, sys.path[0] + ("/../.."))
+    python -m scripts.motion_tests.compute_losses [--motion_dirs DIR [DIR ...]]
+        [--char_file data/assets/humanoid.xml] [--device cuda:0] [--output parc_gen_metrics.csv]
+
+Motion files are MS files named <terrain>_<i>.pkl, with terrain names PATH_TERRAIN_0 ...
+PATH_TERRAIN_99, and with path_nodes in their misc_data. Paths may use $DATA_DIR.
+"""
+import argparse
 import csv
 import os
 import re
+import sys
 from collections import OrderedDict
 
-import torch
-import yaml
+repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+if repo_root not in sys.path:
+    sys.path.insert(0, repo_root)
 
-import parc.anim.kin_char_model as kin_char_model
-import parc.motion_synthesis.procgen.mdm_path as mdm_path
-import parc.util.geom_util as geom_util
-import parc.util.motion_edit_lib as medit_lib
-import parc.util.motion_util as motion_util
+import torch  # noqa: E402
+
+import parc.anim.kin_char_model as kin_char_model  # noqa: E402
+import parc.motion_synthesis.procgen.mdm_path as mdm_path  # noqa: E402
+import parc.util.file_io_helper as file_io_helper  # noqa: E402
+import parc.util.geom_util as geom_util  # noqa: E402
+import parc.util.motion_util as motion_util  # noqa: E402
+import parc.util.path_loader as path_loader  # noqa: E402
+import parc.util.terrain_util as terrain_util  # noqa: E402
 
 # Load the test motions
-#motion_dir_path = "../tests/val_tests/paths_v_07_model_75000/output/"
-#motion_dir_path = "../tests/val_tests/paths_v_16_model_12500/output/"
-####motion_dir_path = "../tests/val_tests/paths_v_18_model_12500/output/"
-#motion_dir_path = "../tests/val_tests/paths_v_18_model_25000/output/"
-#motion_dir_path = "../tests/val_tests/paths_v_16_no_opt_model_12500/output/"
-#motion_dir_path = "../tests/val_tests/paths_v_21_model_30000/output/"
-#motion_dir_path = "../tests/val_tests/paths_v_21_model_30000_cfg_0/output/"
-# motion_dir_path = "../tests/val_tests/paths_v_21_model_30000_cfg_0_25/output/"
-# motion_dir_path = "../tests/val_tests/paths_v_21_model_30000_cfg_0_5/output/"
-# motion_dir_path = "../tests/val_tests/paths_v_21_model_30000_cfg_0_75/output/"
-#motion_dir_path = "../tests/val_tests/paths_v_21_model_30000_cfg_1/output/"
-# motion_dir_path = "../tests/val_tests/paths_v_23_model_30000_test_03_cfg_0_55/output/"
-#motion_dir_path = "../tests/val_tests/april_parc/iter1_epoch2500/output/"
+#motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_07_model_75000/output/"
+#motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_16_model_12500/output/"
+####motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_18_model_12500/output/"
+#motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_18_model_25000/output/"
+#motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_16_no_opt_model_12500/output/"
+#motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_21_model_30000/output/"
+#motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_21_model_30000_cfg_0/output/"
+# motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_21_model_30000_cfg_0_25/output/"
+# motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_21_model_30000_cfg_0_5/output/"
+# motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_21_model_30000_cfg_0_75/output/"
+#motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_21_model_30000_cfg_1/output/"
+# motion_dir_path = "$DATA_DIR/tests/val_tests/paths_v_23_model_30000_test_03_cfg_0_55/output/"
+#motion_dir_path = "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch2500/output/"
 motion_dirs = [
-    "../tests/val_tests/april_parc/iter1_epoch2500/output/",
-    "../tests/val_tests/april_parc/iter1_epoch5000/output/",
-    "../tests/val_tests/april_parc/iter1_epoch7500/output/",
-    "../tests/val_tests/april_parc/iter1_epoch10000/output/",
-    "../tests/val_tests/april_parc/iter1_epoch12500/output/",
-    "../tests/val_tests/april_parc/iter1_epoch15000/output/",
-    "../tests/val_tests/april_parc/iter1_epoch17500/output/",
-    "../tests/val_tests/april_parc/iter1_epoch20000/output/",
-    "../tests/val_tests/april_parc/iter1_epoch22500/output/",
-    "../tests/val_tests/april_parc/iter1_epoch25000/output/",
-    "../tests/val_tests/april_parc/iter1_epoch27500/output/"
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch2500/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch5000/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch7500/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch10000/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch12500/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch15000/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch17500/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch20000/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch22500/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch25000/output/",
+    "$DATA_DIR/tests/val_tests/april_parc/iter1_epoch27500/output/"
 ]
+
+DEFAULT_CHAR_FILE = "data/assets/humanoid.xml"
+NUM_PATH_TERRAINS = 100
+MAX_JERK = 11666.3906 #10000.0
 
 
 def compute_csv_header():
-    header = ["exp_name", 
-              "final_node_dist mean", 
-              "final_node_dist std", 
-              "motion_length mean", 
+    header = ["exp_name",
+              "final_node_dist mean",
+              "final_node_dist std",
+              "motion_length mean",
               "motion_length std",
               "mean_jerk mean",
               "mean_jerk std",
-              "frames_with_jerk_over_X mean", 
+              "frames_with_jerk_over_X mean",
               "frames_with_jerk_over_X std",
               "contact_loss mean",
               "contact_loss std",
               "pen_loss mean",
               "pen_loss std"]
-    
-    for i in range(100):
+
+    for i in range(NUM_PATH_TERRAINS):
         terrain_name = "PATH_TERRAIN_" + str(i)
         header.append(terrain_name + "final node dist mean")
         header.append(terrain_name + "final node dist std")
@@ -77,25 +95,35 @@ def compute_csv_header():
     return header
 
 
-def compute_csv_row(motion_dir_path):
-    compute_geom_losses = True
-    max_jerk = 11666.3906 #10000.0
+def load_generated_motion(motion_path, device):
+    """Returns (MotionFrames [num_frames], terrain, path_nodes, fps) of an MS motion file."""
+    file_data = file_io_helper.load_ms_file(motion_path, device=device)
+    motion_data = file_data.motion_data
+    if motion_data is None or file_data.terrain_data is None:
+        raise ValueError("{}: needs motion and terrain data".format(motion_path))
+    misc_data = file_data.misc_data if file_data.misc_data is not None else dict()
+    if file_io_helper.PATH_NODES_KEY not in misc_data:
+        raise ValueError("{}: no path_nodes in misc_data".format(motion_path))
 
-    char_model_path = "data/assets/humanoid.xml"
-    device = "cuda:0"
+    motion_frames = motion_util.MotionFrames(root_pos=motion_data.root_pos, root_rot=motion_data.root_rot,
+                                             joint_rot=motion_data.joint_rot, contacts=motion_data.body_contacts)
+    terrain = terrain_util.SubTerrain.from_ms_terrain_data(file_data.terrain_data, device=device)
+    return motion_frames, terrain, misc_data[file_io_helper.PATH_NODES_KEY], motion_data.fps
+
+
+def compute_csv_row(motion_dir_path, char_model_path=DEFAULT_CHAR_FILE, device=None):
+    compute_geom_losses = True
+    max_jerk = MAX_JERK
+
+    if device is None:
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
     char_model = kin_char_model.KinCharModel(device)
-    char_model.load_char_file(char_model_path)
+    char_model.load_char_file(str(path_loader.resolve_path(char_model_path)))
 
     body_points = geom_util.get_char_point_samples(char_model)
 
-    motion_files = os.listdir(motion_dir_path)
-
-    final_node_dists = []
-    motion_lengths = []
-
-    # NOTE: maybe try this stat just for completed motions?
-    motion_pen_losses = []
-    motion_contact_losses = []
+    motion_dir_path = str(path_loader.resolve_path(motion_dir_path))
+    motion_files = sorted(os.listdir(motion_dir_path))
 
     output_data = [motion_dir_path]
 
@@ -103,7 +131,7 @@ def compute_csv_row(motion_dir_path):
     # TODO: organize losses based on terrain too
 
     total_losses = OrderedDict()
-    for i in range(100):
+    for i in range(NUM_PATH_TERRAINS):
         terrain_name = "PATH_TERRAIN_" + str(i)
 
         total_losses[terrain_name] = {
@@ -123,44 +151,28 @@ def compute_csv_row(motion_dir_path):
         if os.path.splitext(motion_file)[1] != ".pkl":
             continue
 
-        
-        terrain_name = result = re.sub(r'_\d+$', '', os.path.splitext(motion_file)[0])
-        #print(terrain_name)
+        terrain_name = re.sub(r'_\d+$', '', os.path.splitext(motion_file)[0])
         if terrain_name not in total_losses:
-            assert False
+            raise ValueError("{}: expected a file named PATH_TERRAIN_<0-{}>_<i>.pkl".format(
+                motion_file, NUM_PATH_TERRAINS - 1))
 
         motion_path = os.path.join(motion_dir_path, motion_file)
 
-        motion_data = medit_lib.load_motion_file(motion_path, device=device)
-        #motion_data.set_device(device=device)
+        motion_frames, terrain, path_nodes, fps = load_generated_motion(motion_path, device)
+        root_pos = motion_frames.root_pos
 
-        path_nodes = motion_data._data["path_nodes"]
-        motion_frames = motion_data.get_frames()
-        terrain = motion_data.get_terrain()
-        contact_frames = motion_data.get_contacts()
-
-        if len(motion_frames.shape) == 3 and motion_frames.shape[0] == 1:
-            motion_frames = motion_frames.squeeze(0)
-
-        if len(contact_frames.shape) == 3 and contact_frames.shape[0] == 1:
-            contact_frames = contact_frames.squeeze(0)
-
-        final_node_dist = motion_frames[-1, 0:2] - path_nodes[-1, 0:2]
+        final_node_dist = root_pos[-1, 0:2] - path_nodes[-1, 0:2]
 
         final_node_dist = torch.linalg.norm(final_node_dist).item()
 
         total_losses[terrain_name]["final_node_dist"].append(final_node_dist)
 
-        motion_length = motion_frames.shape[0] / 30.0
+        motion_length = root_pos.shape[0] / fps
         total_losses[terrain_name]["motion_length"].append(motion_length)
 
+        body_pos, body_rot = char_model.forward_kinematics(root_pos, motion_frames.root_rot, motion_frames.joint_rot)
 
-        # TODO: fix
-        root_pos, root_rot, joint_rot = char_model.extract_frame_data(motion_frames)
-        
-        body_pos, body_rot = char_model.forward_kinematics(root_pos, root_rot, joint_rot)
-
-        dt = 1.0 / 30.0
+        dt = 1.0 / fps
         body_vel = (body_pos[1:] - body_pos[:-1]) / dt
         body_acc = (body_vel[1:] - body_vel[:-1]) / dt
         body_jerk = (body_acc[1:] - body_acc[:-1]) / dt
@@ -174,13 +186,21 @@ def compute_csv_row(motion_dir_path):
         total_losses[terrain_name]["frames_with_jerk_over_X"].append(frames_with_jerk_over_X)
 
         if compute_geom_losses:
-            compute_motion_frames = motion_util.motion_frames_from_mlib_format(
-                motion_frames, char_model=char_model, contacts=contact_frames
-            ).unsqueeze(0)
+            # compute_motion_loss indexes contacts by body id
+            contacts = motion_frames.contacts
+            if contacts is None:
+                contacts = torch.zeros(size=[root_pos.shape[0], char_model.get_num_contact_bodies()],
+                                       dtype=torch.float32, device=device)
+            if contacts.shape[-1] != char_model.get_num_bodies():
+                contacts = char_model.create_full_contact_tensor(contacts)
+            compute_motion_frames = motion_util.MotionFrames(root_pos=root_pos,
+                                                             root_rot=motion_frames.root_rot,
+                                                             joint_rot=motion_frames.joint_rot,
+                                                             contacts=contacts).unsqueeze(0)
 
             losses = mdm_path.compute_motion_loss(
-                motion_frames=compute_motion_frames, 
-                path_nodes=path_nodes, 
+                motion_frames=compute_motion_frames,
+                path_nodes=path_nodes,
                 terrain=terrain,
                 char_model=char_model,
                 body_points=body_points,
@@ -188,7 +208,7 @@ def compute_csv_row(motion_dir_path):
                 w_pen=1.0,
                 w_path=1.0,
                 verbose=False)
-            
+
             contact_loss = losses["contact_loss"].item()
             pen_loss = losses["pen_loss"].item()
 
@@ -225,8 +245,8 @@ def compute_csv_row(motion_dir_path):
 
         num_frames_max_jerk = total_losses[terrain_name]["frames_with_jerk_over_X"]
         num_frames_max_jerk = torch.tensor(num_frames_max_jerk, dtype=torch.float64, device="cpu")
-        terrain_output_data.append(num_frames_max_jerk.mean())
-        terrain_output_data.append(num_frames_max_jerk.std())
+        terrain_output_data.append(num_frames_max_jerk.mean().item())
+        terrain_output_data.append(num_frames_max_jerk.std().item())
 
         all_terrain_final_node_dists.append(final_node_dists)
         all_terrain_motion_lengths.append(motion_lengths)
@@ -275,16 +295,25 @@ def compute_csv_row(motion_dir_path):
     return output_data
 
 
-    
-
-if __name__ == "__main__":
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Metrics of generated motions, one CSV row per directory.")
+    parser.add_argument("--motion_dirs", nargs="+", default=motion_dirs)
+    parser.add_argument("--char_file", default=DEFAULT_CHAR_FILE)
+    parser.add_argument("--device", default=None, help="default: cuda:0 if available, else cpu")
+    parser.add_argument("--output", default="parc_gen_metrics.csv")
+    args = parser.parse_args(argv)
 
     data = []
     data.append(compute_csv_header())
 
-    for motion_dir_path in motion_dirs:
-        data.append(compute_csv_row(motion_dir_path))
-    
-    with open('parc_gen_metrics.csv', 'w', newline='') as file:
+    for motion_dir_path in args.motion_dirs:
+        data.append(compute_csv_row(motion_dir_path, char_model_path=args.char_file, device=args.device))
+
+    with open(str(path_loader.resolve_path(args.output)), 'w', newline='') as file:
         writer = csv.writer(file)
         writer.writerows(data)
+    print("Saved", args.output)
+
+
+if __name__ == "__main__":
+    main()

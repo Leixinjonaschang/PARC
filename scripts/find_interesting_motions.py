@@ -1,3 +1,10 @@
+"""Lists the motions of a dataset with the largest root height changes, longest root paths,
+most hand contacts, fewest foot contacts and largest root-to-terrain distances.
+
+    python -m scripts.find_interesting_motions [--motion_file <dataset .yaml or MS .pkl>]
+        [--char_file data/assets/humanoid.xml] [--device cpu]
+"""
+import argparse
 import os
 import sys
 from pathlib import Path
@@ -15,23 +22,15 @@ if str(repo_root) not in sys.path:
 
 import parc.anim.kin_char_model as kin_char_model
 import parc.anim.motion_lib as motion_lib
+import parc.util.path_loader as path_loader
 
 
 #from diffusion.mdm_heightfield_contact_motion_sampler import MDMHeightfieldContactMotionSampler
 
-motion_lib_file = "output/datasets/rerun_april272025_iter_5_siggraph_terrain.yaml"
-char_file = "data/assets/humanoid.xml"
-device = "cpu"
-char_model = kin_char_model.KinCharModel(device)
-char_model.load_char_file(char_file)
-mlib = motion_lib.MotionLib.from_file(motion_file=motion_lib_file, char_model=char_model, device=device, contact_info=True)
-
+DEFAULT_MOTION_FILE = "output/datasets/rerun_april272025_iter_5_siggraph_terrain.yaml"
+DEFAULT_CHAR_FILE = "data/assets/humanoid.xml"
 
 key_body_names = ["left_foot", "right_foot", "left_hand", "right_hand"]
-key_body_ids = []
-for name in key_body_names:
-    key_body_ids.append(char_model.get_body_id(name))
-key_body_ids = torch.tensor(key_body_ids, dtype=torch.int64, device=device)
 
 
 def compute_root_height_delta(root_pos):
@@ -62,7 +61,22 @@ def format_top_entries(entries, reverse=True):
     return sorted(entries, key=lambda item: item[0], reverse=reverse)[:10]
 
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="Find motions with extreme root/contact statistics in a dataset.")
+    parser.add_argument("--motion_file", default=DEFAULT_MOTION_FILE, help="dataset yaml or MS motion file")
+    parser.add_argument("--char_file", default=DEFAULT_CHAR_FILE)
+    parser.add_argument("--device", default="cpu")
+    args = parser.parse_args(argv)
+
+    device = args.device
+    char_model = kin_char_model.KinCharModel(device)
+    char_model.load_char_file(str(path_loader.resolve_path(args.char_file)))
+    mlib = motion_lib.MotionLib.from_file(motion_file=args.motion_file, char_model=char_model, device=device, contact_info=True)
+
+    # body ids (generic names resolve through KinCharModel's aliases, e.g. on the G1)
+    key_body_ids = torch.tensor([char_model.get_body_id(name) for name in key_body_names],
+                                dtype=torch.int64, device=device)
+
     motion_names = mlib.get_motion_names()
     num_motions = mlib.num_motions()
 
@@ -81,6 +95,8 @@ def main():
         frames = mlib.get_frames_for_id(motion_id, compute_fk=False)
         root_pos = frames.root_pos
         contacts = frames.contacts
+        if contacts is not None:
+            contacts = char_model.create_full_contact_tensor(contacts) # indexed by body id below
         name = motion_names[motion_id]
 
         height_delta = compute_root_height_delta(root_pos)

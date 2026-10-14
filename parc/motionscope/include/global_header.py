@@ -26,6 +26,7 @@ import parc.anim.kin_char_model as kin_char_model
 import parc.anim.motion_lib as motion_lib
 import parc.motion_generator.gen_util as gen_util
 import parc.motion_generator.mdm as mdm
+import parc.motionscope.char_paths as char_paths
 import parc.motionscope.polyscope_util as ps_util
 import parc.motionscope.ps_mdm_util as ps_mdm_util
 import parc.motion_synthesis.procgen.astar as astar
@@ -46,9 +47,8 @@ try:
     input_config = path_loader.load_config(config_path)
 
     def _resolve_char_path(char_identifier: str) -> str:
-        if char_identifier == "humanoid":
-            return "data/assets/humanoid.xml"
-        return char_identifier
+        # "humanoid", "g1" (see parc/motionscope/char_paths.py) or a character file path
+        return char_paths.resolve_char_path(char_identifier)
 
     def _parse_motion_entry(entry):
         if not isinstance(entry, (list, tuple)):
@@ -67,6 +67,8 @@ try:
         raise ValueError("At least one motion must be specified in motionscope_config.yaml")
 
     g_motion_browser_path, g_char_filepath = g_motion_filepaths[0]
+    # motion file the motion editor's "Load Motion" button loads (set by its file browser)
+    g_motion_filepath = g_motion_browser_path
 
     g_use_legacy_file_format = input_config["use_legacy_file_format"]
 
@@ -1211,29 +1213,11 @@ for file_idx in range(len(g_motion_filepaths)):
     char_filepath = elem[1]
     
     if g_use_legacy_file_format:
-        g_motion_data = medit_lib.load_motion_file(motion_filepath)
-        g_motion_data.set_device(MainVars().device)
-        MainVars().motion_dt = 1.0 / g_motion_data.get_fps()
-        if "opt:body_constraints" in g_motion_data._data:
-            OptimizationSettings().body_constraints = g_motion_data._data["opt:body_constraints"]
-            OptimizationSettings().create_body_constraint_ps_meshes()
-
-        if "path_nodes" in g_motion_data._data:
-            PathPlanningSettings().path_nodes = g_motion_data._data["path_nodes"]
-            PathPlanningSettings().visualize_path_nodes(MotionManager().get_curr_motion().name + "_path", PathPlanningSettings().path_nodes)
-
-        if "loss" in g_motion_data._data:
-            print("Loss:", g_motion_data._data["loss"])
-
-        if "obs" in g_motion_data._data:
-            IGObsSettings().setup(g_motion_data._data["obs"], g_motion_data._data["obs_shapes"])
-
-        # Get Terrain
-        if g_motion_data.has_terrain():
-            terrain = g_motion_data.get_terrain()
-        else:
-            terrain = terrain_util.SubTerrain(x_dim=16, y_dim=16, dx=0.4, dy=0.4, min_x = -3.0, min_y=-3.0, device=MainVars().device)
-        terrain_manager.update_active_terrain(terrain)
+        # This branch never registered a motion, so it always crashed further down; legacy
+        # (develop-era) motion pickles have to be converted to MS files instead.
+        raise ValueError("use_legacy_file_format is no longer supported: convert {} with "
+                         "scripts/convert_legacy_motions.py and set use_legacy_file_format: False "
+                         "in motionscope_config.yaml".format(motion_filepath))
     else:
         MotionManager().load_motion(motion_filepath, char_filepath, os.path.basename(motion_filepath), update_terrain=file_idx==0)
 

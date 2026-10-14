@@ -143,13 +143,12 @@ def path_planning_gui():
                                                                         mdm_settings=g.MDMSettings().gen_settings,
                                                                         path_settings=mdm_path_settings)
 
-            new_frames, new_contacts = gen_motion_frames.get_mlib_format(curr_motion.char.char_model)
-            new_frames = new_frames.squeeze(0)
-            new_contacts = new_contacts.squeeze(0)
-            new_frames = torch.cat([curr_motion.mlib._motion_frames[:start_frame], new_frames[num_prev_states:]], dim=0)
-            new_contacts = torch.cat([curr_motion.mlib._frame_contacts[:start_frame], new_contacts[num_prev_states:]], dim=0)
+            # MotionFrames [1, num_frames, ...]: append the new frames after the first start_frame frames
+            gen_motion_frames = gen_motion_frames.get_copy(curr_motion.mlib._device).squeeze(0)
+            new_frames = motion_util.cat_motion_frames([
+                curr_motion.mlib.get_frames_for_id(0).get_slice(slice(0, start_frame)),
+                gen_motion_frames.get_slice(slice(num_prev_states, gen_motion_frames.root_pos.shape[0]))])
             g.MotionManager().make_new_motion(motion_frames=new_frames, 
-                              contact_frames=new_contacts, 
                               new_motion_name="ASTARMDM",
                               motion_fps=g.g_mdm_model._sequence_fps, 
                               vis_fps=10)

@@ -1,8 +1,9 @@
 import numpy as np
 import torch
 import time
+import warnings
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 import enum
 
 import parc.anim.kin_char_model as kin_char_model
@@ -71,9 +72,47 @@ def _align_contacts_to_bodies(
 
     return aligned_contacts
 
-def compute_approx_body_constraints(root_pos, root_rot, joint_rot, contacts, 
+# The body constraint loss models a body by its first geom: a sphere (distance of the
+# sphere's center to the constraint point) or a box (distance of the box's first 18
+# surface samples, the humanoid's foot sole). Constraints on bodies whose first geom is
+# anything else are skipped. That includes the Unitree G1's feet and hands, whose first
+# geom is a mesh, so on the G1 body constraints have no effect (decision D16 in
+# doc/porting_plan.md; develop behaves the same).
+BODY_CONSTRAINT_GEOM_TYPES = (kin_char_model.GeomType.SPHERE, kin_char_model.GeomType.BOX)
+
+def get_body_constraint_geom(char_model: kin_char_model.KinCharModel, body_id: int) -> Optional[kin_char_model.Geom]:
+    """Returns the geom that body constraints on ``body_id`` act on, or None if they are not supported."""
+    geoms = char_model.get_geoms(body_id)
+    if len(geoms) == 0 or geoms[0]._shape_type not in BODY_CONSTRAINT_GEOM_TYPES:
+        return None
+    return geoms[0]
+
+def find_unsupported_body_constraints(body_constraints, char_model: kin_char_model.KinCharModel):
+    """Returns {body name: first geom type name (or "no geom")} for the bodies that have
+    constraints the optimization will skip."""
+    unsupported = dict()
+    if body_constraints is None:
+        return unsupported
+    for b in range(len(body_constraints)):
+        if len(body_constraints[b]) == 0 or get_body_constraint_geom(char_model, b) is not None:
+            continue
+        geoms = char_model.get_geoms(b)
+        unsupported[char_model.get_body_name(b)] = geoms[0]._shape_type.name if len(geoms) > 0 else "no geom"
+    return unsupported
+
+def warn_unsupported_body_constraints(body_constraints, char_model: kin_char_model.KinCharModel, context: str):
+    unsupported = find_unsupported_body_constraints(body_constraints, char_model)
+    if len(unsupported) > 0:
+        bodies = ", ".join("{} ({})".format(name, geom_type) for name, geom_type in unsupported.items())
+        warnings.warn("{}: body constraints on {} are ignored by the motion optimization, which only supports "
+                      "bodies whose first geom is a SPHERE or BOX (open decision D16 in doc/porting_plan.md)."
+                      .format(context, bodies), stacklevel=3)
+    return unsupported
+
+def compute_approx_body_constraints(root_pos, root_rot, joint_rot, contacts,
                                     char_model: kin_char_model.KinCharModel,
                                     terrain: terrain_util.SubTerrain):
+    # contacts: [num_frames, num_contact_bodies] (or already one column per body)
 
     def extract_consecutive_trues(bool_tensor):
         # Ensure the tensor is 1D
@@ -151,6 +190,12 @@ def compute_approx_body_constraints(root_pos, root_rot, joint_rot, contacts,
     
     body_pos, body_rot = char_model.forward_kinematics(root_pos, root_rot, joint_rot)
 
+    # body ids index the contact columns below
+    if contacts.shape[-1] != char_model.get_num_bodies():
+        contacts = _align_contacts_to_bodies(contacts, char_model, device=contacts.device)
+
+    # Generic names; KinCharModel resolves them through BODY_NAME_ALIASES
+    # (e.g. G1: left_foot -> left_ankle_roll_link, left_hand -> left_wrist_yaw_link).
     lf_id = char_model.get_body_id("left_foot")
     rf_id = char_model.get_body_id("right_foot")
     lh_id = char_model.get_body_id("left_hand")
@@ -158,17 +203,22 @@ def compute_approx_body_constraints(root_pos, root_rot, joint_rot, contacts,
 
     #ps.register_point_cloud("right hand positions", rh_pos, radius = 0.005)
 
+    def first_geom_offset(body_id):
+        geoms = char_model.get_geoms(body_id)
+        if len(geoms) == 0:
+            return torch.zeros(3, dtype=body_pos.dtype, device=body_pos.device)
+        return geoms[0]._offset
+
     lf_pos = body_pos[:, lf_id]#.cpu().numpy()
     rf_pos = body_pos[:, rf_id]#.cpu().numpy()
     lf_rot = body_rot[:, lf_id]
     rf_rot = body_rot[:, rf_id]
-    # get the center of the box
-    lf_geom = char_model.get_geoms(lf_id)[0]
-    lf_box_offset = lf_geom._offset
+    # get the center of the box (for a mesh foot such as the G1's, the body origin: its
+    # first geom has a zero offset)
+    lf_box_offset = first_geom_offset(lf_id)
     lf_pos = lf_pos + torch_util.quat_rotate(lf_rot, lf_box_offset.unsqueeze(0))
 
-    rf_geom = char_model.get_geoms(rf_id)[0]
-    rf_box_offset = rf_geom._offset
+    rf_box_offset = first_geom_offset(rf_id)
     rf_pos = rf_pos + torch_util.quat_rotate(rf_rot, rf_box_offset.unsqueeze(0))
 
     lh_pos = body_pos[:, lh_id]
@@ -206,6 +256,7 @@ def compute_approx_body_constraints(root_pos, root_rot, joint_rot, contacts,
     body_constraints[lh_id] = create_opt_constraints(lh_points, lh_contact_frame_ids)
     body_constraints[rh_id] = create_opt_constraints(rh_points, rh_contact_frame_ids)
 
+    warn_unsupported_body_constraints(body_constraints, char_model, "compute_approx_body_constraints")
     return body_constraints
 
 def motion_terrain_contact_loss(tgt_root_pos, tgt_root_rot, tgt_joint_dof,
@@ -317,16 +368,20 @@ def motion_terrain_contact_loss(tgt_root_pos, tgt_root_rot, tgt_joint_dof,
 
         if body_constraints is not None:
             curr_body_constraint_list = body_constraints[b] # list of constraints
+            # None (skip) unless the first geom is a SPHERE or BOX (D16); see warn_unsupported_body_constraints
+            constraint_geom = get_body_constraint_geom(char_model, b)
 
             for curr_body_constraint in curr_body_constraint_list:
+                if constraint_geom is None:
+                    break
                 start_frame_idx = curr_body_constraint.start_frame_idx
                 end_frame_idx = curr_body_constraint.end_frame_idx
                 constraint_point = curr_body_constraint.constraint_point
 
                 # NOTE: assuming all bodies are spheres or boxes for now
-                if char_model.get_geoms(b)[0]._shape_type == kin_char_model.GeomType.SPHERE:
-                    radius = char_model.get_geoms(b)[0]._dims
-                    offset = char_model.get_geoms(b)[0]._offset
+                if constraint_geom._shape_type == kin_char_model.GeomType.SPHERE:
+                    radius = constraint_geom._dims
+                    offset = constraint_geom._offset
 
                     # everything broadcastable to shape: [num_frames, 4 or 3]
                     body_center = torch_util.quat_rotate(curr_body_rot.squeeze(1), offset.unsqueeze(0)) + curr_body_pos.squeeze(1)
@@ -335,8 +390,8 @@ def motion_terrain_contact_loss(tgt_root_pos, tgt_root_rot, tgt_joint_dof,
                     body_constraint_diff = geom_util.sdSphere(constraint_point.unsqueeze(0), body_center[start_frame_idx:end_frame_idx+1], radius)
                     body_constraint_loss += torch.sum(torch.abs(body_constraint_diff))
 
-                elif char_model.get_geoms(b)[0]._shape_type == kin_char_model.GeomType.BOX:
-                    radius = torch.norm(char_model.get_geoms(b)[0]._dims) * 1.25
+                elif constraint_geom._shape_type == kin_char_model.GeomType.BOX:
+                    radius = torch.norm(constraint_geom._dims) * 1.25
                     #box_offset = char_model.get_geoms(b)[0]._offset
 
                     # # everything broadcastable to shape: [num_frames, 4 or 3]
@@ -584,23 +639,27 @@ def motion_terrain_contact_loss_localized(tgt_root_pos, tgt_root_rot, tgt_joint_
 
         if body_constraints is not None:
             curr_body_constraint_list = body_constraints[b]
+            # None (skip) unless the first geom is a SPHERE or BOX (D16); see warn_unsupported_body_constraints
+            constraint_geom = get_body_constraint_geom(char_model, b)
 
             for curr_body_constraint in curr_body_constraint_list:
+                if constraint_geom is None:
+                    break
                 start_frame_idx = curr_body_constraint.start_frame_idx
                 end_frame_idx = curr_body_constraint.end_frame_idx
                 constraint_point = curr_body_constraint.constraint_point
 
-                if char_model.get_geoms(b)[0]._shape_type == kin_char_model.GeomType.SPHERE:
-                    radius = char_model.get_geoms(b)[0]._dims
-                    offset = char_model.get_geoms(b)[0]._offset
+                if constraint_geom._shape_type == kin_char_model.GeomType.SPHERE:
+                    radius = constraint_geom._dims
+                    offset = constraint_geom._offset
 
                     body_center = torch_util.quat_rotate(curr_body_rot.squeeze(1), offset.unsqueeze(0)) + curr_body_pos.squeeze(1)
                     body_constraint_diff = geom_util.sdSphere(constraint_point.unsqueeze(0),
                                                               body_center[start_frame_idx:end_frame_idx+1], radius)
                     body_constraint_loss += torch.sum(torch.abs(body_constraint_diff))
 
-                elif char_model.get_geoms(b)[0]._shape_type == kin_char_model.GeomType.BOX:
-                    radius = torch.norm(char_model.get_geoms(b)[0]._dims) * 1.25
+                elif constraint_geom._shape_type == kin_char_model.GeomType.BOX:
+                    radius = torch.norm(constraint_geom._dims) * 1.25
                     foot_sole_points = curr_body_points[start_frame_idx:end_frame_idx+1, 0:18].reshape(-1, 3)
                     body_constraint_diff = geom_util.sdSphere(constraint_point.unsqueeze(0), foot_sole_points, radius)
                     body_constraint_loss += torch.sum(torch.clamp(body_constraint_diff, min=0.0))
@@ -741,8 +800,59 @@ def motion_contact_optimization(src_motion_frames: motion_util.MotionFrames,
                                 max_jerk: float,
                                 exp_name: str,
                                 use_wandb: bool,
-                                log_file: str):
-    # optimize a motion sequence to have non-penetrating contacts
+                                log_file: str,
+                                yield_intermediate: bool = False):
+    """Optimizes a motion (MotionFrames without batch dimension; contacts per contact body)
+    to have non-penetrating contacts. Returns the optimized MotionFrames.
+
+    With ``yield_intermediate`` it returns a generator instead, which yields the current
+    MotionFrames after every iteration and returns the optimized ones (as
+    StopIteration.value); the MotionScope optimization GUI uses this to animate the
+    optimization.
+    """
+    if body_constraints is not None and w_body_constraints != 0.0:
+        warn_unsupported_body_constraints(body_constraints, char_model, "motion_contact_optimization")
+
+    steps = _motion_contact_optimization_steps(
+        src_motion_frames=src_motion_frames, body_points=body_points, terrain=terrain,
+        char_model=char_model, num_iters=num_iters, step_size=step_size,
+        w_root_pos=w_root_pos, w_root_rot=w_root_rot, w_joint_rot=w_joint_rot,
+        w_smoothness=w_smoothness, w_penetration=w_penetration, w_contact=w_contact,
+        w_sliding=w_sliding, w_body_constraints=w_body_constraints, w_jerk=w_jerk,
+        body_constraints=body_constraints, max_jerk=max_jerk, exp_name=exp_name,
+        use_wandb=use_wandb, log_file=log_file, yield_frames=yield_intermediate)
+    if yield_intermediate:
+        return steps
+
+    while True:
+        try:
+            next(steps)
+        except StopIteration as stop:
+            return stop.value
+
+def _motion_contact_optimization_steps(src_motion_frames: motion_util.MotionFrames,
+                                       body_points: list,
+                                       terrain: terrain_util.SubTerrain,
+                                       char_model: kin_char_model.KinCharModel,
+                                       num_iters: int,
+                                       step_size: float,
+                                       w_root_pos: float,
+                                       w_root_rot: float,
+                                       w_joint_rot: float,
+                                       w_smoothness: float,
+                                       w_penetration: float,
+                                       w_contact: float,
+                                       w_sliding: float,
+                                       w_body_constraints: float,
+                                       w_jerk: float,
+                                       body_constraints: list,
+                                       max_jerk: float,
+                                       exp_name: str,
+                                       use_wandb: bool,
+                                       log_file: str,
+                                       yield_frames: bool):
+    # Generator behind motion_contact_optimization: one step per iteration, yielding the
+    # current frames if yield_frames (else None), returning the optimized frames.
     start_time = time.time()
 
     src_motion_frames.assert_num_dims(2)
@@ -770,6 +880,12 @@ def motion_contact_optimization(src_motion_frames: motion_util.MotionFrames,
     log_iter_stride = 25
 
     logger = build_logger(log_file=log_file, exp_name=exp_name, use_wandb=use_wandb)
+
+    def current_frames():
+        return motion_util.MotionFrames(root_pos = tgt_root_pos.detach().clone(),
+                                        root_rot = torch_util.exp_map_to_quat(tgt_root_rot.detach()),
+                                        joint_rot = char_model.dof_to_rot(tgt_joint_dof.detach()),
+                                        contacts = src_motion_frames.contacts.clone())
 
     for iter in range(num_iters):
         optimizer.zero_grad()
@@ -808,6 +924,8 @@ def motion_contact_optimization(src_motion_frames: motion_util.MotionFrames,
 
             logger.print_log()
             logger.write_log()
+
+        yield current_frames() if yield_frames else None
 
 
     if use_wandb:

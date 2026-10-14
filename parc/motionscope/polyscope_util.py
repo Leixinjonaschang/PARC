@@ -3,6 +3,7 @@ from typing import List
 
 import numpy as np
 import polyscope as ps
+import polyscope.imgui as psim
 import torch
 import trimesh
 
@@ -12,6 +13,21 @@ import parc.util.motion_edit_lib as medit_lib
 import parc.util.torch_util as torch_util
 from parc.util.motion_util import MotionFrames
 
+
+def unavailable_button(label: str, reason: str):
+    """Draws ``label`` as a disabled button whose tooltip gives ``reason``.
+
+    For GUI actions whose implementation does not exist in this version (clicking them
+    used to raise AttributeError and close MotionScope).
+    """
+    psim.BeginDisabled(True)
+    psim.Button(label)
+    psim.EndDisabled()
+    if psim.IsItemHovered(psim.ImGuiHoveredFlags_AllowWhenDisabled):
+        psim.SetTooltip(reason)
+    psim.SameLine()
+    psim.TextDisabled("(unavailable)")
+    return
 
 def create_sphere(center, radius, name="sphere", color=(1.0, 0.0, 0.0), num_subdivisions=0):
     sphere_mesh = trimesh.primitives.Sphere(radius=radius, subdivisions=num_subdivisions)
@@ -287,7 +303,7 @@ def create_char_trimeshes(char_model: kin_char_model.KinCharModel):
                 radius = geom._dims[0].item()
                 half_height = geom._dims[1].item()
                 height = 2 * half_height
-                offset = geom._offset
+                offset = geom._offset.cpu().numpy()
                 quat = torch.from_numpy(geom._quat).to(dtype=torch.float32, device="cpu")
                 transform=np.eye(4)
                 transform[:3, 3] = offset
@@ -299,7 +315,7 @@ def create_char_trimeshes(char_model: kin_char_model.KinCharModel):
                 mesh_name = geom._mesh_name
                 mesh = char_model._meshes[mesh_name].copy()
                 #if geom._quat is not None:
-                offset = geom._offset
+                offset = geom._offset.cpu().numpy()
                 quat = torch.from_numpy(geom._quat).to(dtype=torch.float32, device="cpu")
                 transform=np.eye(4)
                 transform[:3, 3] = offset

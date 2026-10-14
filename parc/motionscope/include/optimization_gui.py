@@ -83,16 +83,20 @@ def motion_optimization_gui():
 
                                 if psim.Button("Test sdf"):
                                     # NOTE: only works for single sphere bodies right now
-                                    curr_body_rot = curr_motion.char.get_body_rot(b)
-                                    offset = curr_motion.char.char_model.get_geoms(b)[0]._offset
-                                    radius = curr_motion.char.char_model.get_geoms(b)[0]._dims
-                                    curr_body_pos = curr_motion.char.get_body_pos(b)
-                                    body_center = torch_util.quat_rotate(curr_body_rot, offset) + curr_body_pos
-                                    print(constraint.constraint_point)
-                                    print(body_center)
-                                    print(radius)
-                                    sd = geom_util.sdSphere(constraint.constraint_point, body_center, radius)
-                                    print("signed distance:", sd.item())
+                                    constraint_geom = moopt.get_body_constraint_geom(curr_motion.char.char_model, b)
+                                    if constraint_geom is None or constraint_geom._shape_type != kin_char_model.GeomType.SPHERE:
+                                        print("Test sdf only supports bodies whose first geom is a sphere")
+                                    else:
+                                        curr_body_rot = curr_motion.char.get_body_rot(b)
+                                        offset = constraint_geom._offset
+                                        radius = constraint_geom._dims
+                                        curr_body_pos = curr_motion.char.get_body_pos(b)
+                                        body_center = torch_util.quat_rotate(curr_body_rot, offset) + curr_body_pos
+                                        print(constraint.constraint_point)
+                                        print(body_center)
+                                        print(radius)
+                                        sd = geom_util.sdSphere(constraint.constraint_point, body_center, radius)
+                                        print("signed distance:", sd.item())
 
                                 psim.TreePop()
                     psim.TreePop()
@@ -116,8 +120,8 @@ def motion_optimization_gui():
             src_frames = curr_motion.mlib.get_frames_for_id(0)
             src_frames.set_device(device="cuda:0")
             terrain.to_torch(device="cuda:0")
-            char_model = kin_char_model.KinCharModel("cuda:0")
-            char_model.load_char_file(g.g_char_filepath)
+            # the current motion's character (g_char_filepath is only the first configured motion's)
+            char_model = curr_motion.char.char_model.get_copy("cuda:0")
 
             if settings.body_constraints is not None:
                 body_constraints = []

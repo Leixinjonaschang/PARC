@@ -4,6 +4,15 @@ import parc.anim.motion_lib as motion_lib
 import parc.motionscope.include.global_header as g
 import parc.motion_synthesis.motion_opt.motion_optimization as moopt
 import parc.util.motion_edit_lib as medit_lib
+import parc.util.motion_util as motion_util
+
+
+def _motion_lib_from_dof_frames(dof_frames, body_contacts, char_model, device, fps, loop_mode):
+    # dof_frames: legacy [num_frames, 6 + dof] frames; body_contacts: [num_frames, num_bodies]
+    frames = motion_util.motion_frames_from_mlib_format(dof_frames, char_model)
+    frames.contacts = body_contacts[:, char_model.get_contact_body_ids()] # MotionLib keeps contact-body columns
+    return motion_lib.MotionLib.from_frames(frames, char_model, device, loop_mode=loop_mode, fps=fps,
+                                            contact_info=True)
 
 
 def contact_editing_gui():
@@ -47,42 +56,55 @@ def contact_editing_gui():
 
         changed, settings.contact_eps = psim.InputFloat("contact eps", settings.contact_eps)    
         if psim.Button("Correct and Label Foot Contacts"):
-            corrected_frames, contact_frames = medit_lib.compute_hf_foot_contacts_and_correct_pen(
-                curr_motion.mlib._motion_frames,
-                terrain,
-                curr_motion.char.char_model,
-                settings.contact_eps)
-            
-            curr_motion.mlib = motion_lib.MotionLib(corrected_frames.unsqueeze(0), curr_motion.char.char_model, main_vars.device, init_type="motion_frames", 
-                                                    contact_info=True, fps=curr_motion.mlib._motion_fps[0].item(),
-                                                    loop_mode=motion_lib.LoopMode(curr_motion.mlib.get_motion_loop_mode(0).item()), contacts = contact_frames)
-            main_vars.use_contact_info = True
+            try:
+                corrected_frames, contact_frames = medit_lib.compute_hf_foot_contacts_and_correct_pen(
+                    curr_motion.mlib._motion_frames,
+                    terrain,
+                    curr_motion.char.char_model,
+                    settings.contact_eps)
+            except ValueError as exc: # e.g. mesh feet (G1): only box feet are supported
+                print("Cannot label foot contacts:", exc)
+                corrected_frames = None
 
-            main_vars.motion_time = 0.0
-            curr_motion.char.set_to_time(main_vars.motion_time, main_vars.motion_dt, curr_motion.mlib)
-            curr_motion.update_sequence(0.0, curr_motion.mlib._motion_lengths[0].item(), int(round(curr_motion.mlib._motion_lengths[0].item() * 15)))
-            curr_motion.update_transforms(shadow_height=curr_motion.char.get_hf_below_root(terrain))
+            if corrected_frames is not None:
+                curr_motion.mlib = _motion_lib_from_dof_frames(corrected_frames, contact_frames, curr_motion.char.char_model,
+                                                               main_vars.device, fps=curr_motion.mlib._motion_fps[0].item(),
+                                                               loop_mode=curr_motion.mlib.get_motion_loop_mode_enum(0))
+                main_vars.use_contact_info = True
+
+                main_vars.motion_time = 0.0
+                curr_motion.char.set_to_time(main_vars.motion_time, main_vars.motion_dt, curr_motion.mlib)
+                curr_motion.update_sequence(0.0, curr_motion.mlib._motion_lengths[0].item(), int(round(curr_motion.mlib._motion_lengths[0].item() * 15)))
+                curr_motion.update_transforms(shadow_height=curr_motion.char.get_hf_below_root(terrain))
 
         if psim.Button("Correct and Label Foot Contacts, and Label Hand Contacts"):
-            corrected_frames, contact_frames = medit_lib.compute_hf_foot_contacts_and_correct_pen(
-                curr_motion.mlib._motion_frames,
-                terrain,
-                curr_motion.char.char_model,
-                settings.contact_eps)
-            
-            hand_contacts = medit_lib.compute_motion_terrain_hand_contacts(curr_motion.mlib._motion_frames, 
-                                                                           terrain,
-                                                                           curr_motion.char.char_model, 
-                                                                           settings.contact_eps)
-            lh_id = curr_motion.char.char_model.get_body_id("left_hand")
-            rh_id = curr_motion.char.char_model.get_body_id("right_hand")
-            contact_frames[:, lh_id] = hand_contacts[:, lh_id]
-            contact_frames[:, rh_id] = hand_contacts[:, rh_id]
+            try:
+                corrected_frames, contact_frames = medit_lib.compute_hf_foot_contacts_and_correct_pen(
+                    curr_motion.mlib._motion_frames,
+                    terrain,
+                    curr_motion.char.char_model,
+                    settings.contact_eps)
 
-            curr_motion.mlib = motion_lib.MotionLib(curr_motion.mlib._motion_frames.unsqueeze(0), curr_motion.char.char_model, main_vars.device, init_type="motion_frames", 
-                                                    contact_info=True, fps=curr_motion.mlib._motion_fps[0].item(),
-                                                    loop_mode=motion_lib.LoopMode.CLAMP, contacts = contact_frames)
-            main_vars.use_contact_info = True
+                hand_contacts = medit_lib.compute_motion_terrain_hand_contacts(curr_motion.mlib._motion_frames, 
+                                                                               terrain,
+                                                                               curr_motion.char.char_model, 
+                                                                               settings.contact_eps)
+            except ValueError as exc: # e.g. mesh feet/hands (G1): only box feet and sphere hands are supported
+                print("Cannot label foot and hand contacts:", exc)
+                contact_frames = None
+
+            if contact_frames is not None:
+                # generic names, resolved per character (G1: *_wrist_yaw_link)
+                lh_id = curr_motion.char.char_model.get_body_id("left_hand")
+                rh_id = curr_motion.char.char_model.get_body_id("right_hand")
+                contact_frames[:, lh_id] = hand_contacts[:, lh_id]
+                contact_frames[:, rh_id] = hand_contacts[:, rh_id]
+
+                curr_motion.mlib = _motion_lib_from_dof_frames(curr_motion.mlib._motion_frames, contact_frames,
+                                                               curr_motion.char.char_model, main_vars.device,
+                                                               fps=curr_motion.mlib._motion_fps[0].item(),
+                                                               loop_mode=motion_lib.LoopMode.CLAMP)
+                main_vars.use_contact_info = True
 
         psim.TreePop()
 

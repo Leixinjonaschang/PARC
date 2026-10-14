@@ -1,6 +1,8 @@
-input_terrains: ../tests/val_tests/demo/spiral/spiral.yaml
-mdm_model: ../tests/train_mdm/parkour_dataset_v_21_test01/checkpoints/model_30000.pkl
-output_folder: ../tests/val_tests/demo/spiral/
+input_terrains: $DATA_DIR/tests/val_tests/demo/spiral/spiral.yaml # its `terrains:` is one MS file or a list
+mdm_model: $DATA_DIR/tests/train_mdm/parkour_dataset_v_21_test01/checkpoints/model_30000.ckpt
+output_folder: $DATA_DIR/tests/val_tests/demo/spiral/
+#device: "cuda:0" # default: cuda:0 if available, else cpu
+use_ema_model: False
 
 mdm_path:
   next_node_lookahead: 7

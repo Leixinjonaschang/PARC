@@ -1,4 +1,4 @@
-motions_yaml_path: "../Data/parkour_dataset/v_05/unreal/unreal_take_004_edit_before_opt.pkl"
+motions_yaml_path: "$DATA_DIR/Data/parkour_dataset/v_05/unreal/unreal_take_004_edit_before_opt.pkl"
 device: "cuda:0"
 output_folder_path: "output/_motions/opt/"
 char_model: "data/assets/humanoid.xml"
