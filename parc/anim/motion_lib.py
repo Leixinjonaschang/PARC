@@ -220,7 +220,7 @@ class MotionLib():
         if num_frames > 1:
             self._frame_root_ang_vel[..., -1, :] = self._frame_root_ang_vel[..., -2, :]
 
-        self._frame_dof_vel = self._kin_char_model.compute_frame_dof_vel(self._frame_joint_rot, fps)
+        self._frame_dof_vel = self._kin_char_model.compute_frame_dof_vel(self._frame_joint_rot, 1.0 / fps)
 
 
         # must reararange the self._frame_X vars so that their shape goes from
