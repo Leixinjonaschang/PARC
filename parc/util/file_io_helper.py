@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import asdict
 from typing import Any, List, MutableMapping, Optional, Union
 
@@ -18,35 +19,44 @@ OBS_SHAPES_KEY = "obs_shapes"
 CAM_PARAMS_KEY = "cam_params"
 
 def numpify_body_constraints(obj):
-    if isinstance(obj, moopt.BodyConstraint):
-        objdict = asdict(obj)
+    # Body constraints are nested lists (one list per body) of BodyConstraint;
+    # MS files store each constraint as a dict of numpy values.
+    if isinstance(obj, (moopt.BodyConstraint, dict)):
+        objdict = asdict(obj) if isinstance(obj, moopt.BodyConstraint) else dict(obj)
         for key, value in objdict.items():
             if isinstance(value, torch.Tensor):
-                objdict[key] = value.cpu().numpy()
+                objdict[key] = value.detach().cpu().numpy()
         return objdict
     elif isinstance(obj, list):
         return [numpify_body_constraints(x) for x in obj]
     else:
-        assert False
-    
+        assert False, "unexpected body constraint type: {}".format(type(obj))
+
 def torchify_body_constraints(obj, device):
+    # Inverse of numpify_body_constraints; also accepts BodyConstraint objects
+    # (legacy files pickle them directly).  Constraints without a point cannot
+    # be used: files saved while BodyConstraint had no annotated fields hold {}
+    # for every constraint.  Those are dropped with a warning.
+    if isinstance(obj, list):
+        constraints = [torchify_body_constraints(x, device) for x in obj]
+        return [x for x in constraints if x is not None]
+
     if isinstance(obj, dict):
-        for key, value in obj.items():
-            if isinstance(value, torch.Tensor):
-                obj[key] = torch.from_numpy(value).to(dtype=torch.float32, device=device)
-        body_constraint = moopt.BodyConstraint(**obj)
-        return body_constraint
-    elif isinstance(obj, list):
-        return [torchify_body_constraints(x, device) for x in obj]
-    elif isinstance(obj, moopt.BodyConstraint):
-        if isinstance(obj.constraint_point, torch.Tensor):
-            obj.constraint_point = obj.constraint_point.to(device=device)
-        elif isinstance(obj.constraint_point, np.ndarray):
-            obj.constraint_point = torch.from_numpy(obj.constraint_point).to(device=device)
-        else:
-            assert False
-    else:
-        assert False
+        obj = moopt.BodyConstraint(**obj)
+    if not isinstance(obj, moopt.BodyConstraint):
+        assert False, "unexpected body constraint type: {}".format(type(obj))
+
+    point = obj.constraint_point
+    if point is None:
+        warnings.warn("Dropping a body constraint without a constraint point "
+                      "(saved before BodyConstraint fields were annotated?)")
+        return None
+    if isinstance(point, np.ndarray):
+        point = torch.from_numpy(point)
+    if not isinstance(point, torch.Tensor):
+        assert False, "unexpected constraint_point type: {}".format(type(point))
+    obj.constraint_point = point.to(dtype=torch.float32, device=device)
+    return obj
 
 def numpify_hf_mask_inds(hf_mask_inds):
     np_hf_mask_inds = []
@@ -95,28 +105,32 @@ def save_ms_file_simple(filepath,
     return
 
 def save_ms_file(filepath,
-                 motion_frames: Optional[motion_util.MotionFrames],
-                 fps: Optional[int],
-                 loop_mode: Optional[str],
-                 terrain: Optional[terrain_util.SubTerrain],
+                 motion_frames: Optional[motion_util.MotionFrames] = None,
+                 fps: Optional[int] = None,
+                 loop_mode: Optional[str] = None,
+                 terrain: Optional[terrain_util.SubTerrain] = None,
                  ## MISC DATA
-                 hf_mask_inds = Union[List[torch.Tensor], List[np.ndarray], None],
-                 body_constraints = Optional[List[moopt.BodyConstraint]],
-                 min_point_offset = Union[torch.Tensor, np.ndarray, None],
-                 path_nodes = Union[torch.Tensor, np.ndarray, None],
+                 hf_mask_inds: Union[List[torch.Tensor], List[np.ndarray], None] = None,
+                 body_constraints: Optional[List[List[moopt.BodyConstraint]]] = None,
+                 min_point_offset: Union[torch.Tensor, np.ndarray, None] = None,
+                 path_nodes: Union[torch.Tensor, np.ndarray, None] = None,
                  obs = None,
                  obs_shapes = None,
                  cam_params = None,
                  extra_misc_data: Optional[MutableMapping[str, Any]] = None
                  ):
-    # Save helper which makes sure all torch tensors are converted to numpy first
-    
+    # Save helper which makes sure all torch tensors are converted to numpy first.
+    # Everything but filepath is optional: a terrain-only file has no motion_frames.
+
     if motion_frames is not None:
+        if fps is None or loop_mode is None:
+            raise ValueError("save_ms_file: fps and loop_mode are required when saving motion_frames")
         motion_frames.assert_num_dims(2)
-        motion_data = file_io.MSMotionData(root_pos = motion_frames.root_pos.cpu().numpy(),
-                                        root_rot = motion_frames.root_rot.cpu().numpy(),
-                                        joint_rot = motion_frames.joint_rot.cpu().numpy(),
-                                        body_contacts = motion_frames.contacts.cpu().numpy(),
+        body_contacts = None if motion_frames.contacts is None else numpify_torch_tensor(motion_frames.contacts)
+        motion_data = file_io.MSMotionData(root_pos = numpify_torch_tensor(motion_frames.root_pos),
+                                        root_rot = numpify_torch_tensor(motion_frames.root_rot),
+                                        joint_rot = numpify_torch_tensor(motion_frames.joint_rot),
+                                        body_contacts = body_contacts,
                                         fps = fps,
                                         loop_mode = loop_mode)
     else:

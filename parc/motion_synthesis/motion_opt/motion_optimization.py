@@ -24,11 +24,15 @@ class LossType(enum.Enum):
     JERK_LOSS = 8
     LOOPING_LOSS = 9
 
-@dataclass
+# Fields must be annotated: asdict() and the generated __init__ only see
+# annotated fields, so without annotations the constraints were saved as {}.
+# eq=False keeps identity equality and hashing (a field-wise __eq__ would
+# compare tensors), like develop's plain class.
+@dataclass(eq=False)
 class BodyConstraint:
-    start_frame_idx = 0
-    end_frame_idx = 0
-    constraint_point = None # 3D torch vector
+    start_frame_idx: int = 0
+    end_frame_idx: int = 0
+    constraint_point: torch.Tensor = None # [3], set by the creator
 
 
 def _align_contacts_to_bodies(

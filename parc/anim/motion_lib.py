@@ -166,7 +166,8 @@ class MotionLib():
 
         if self._contact_info:
             if frames.contacts is None:
-                contacts = torch.zeros(size=[num_frames, self._kin_char_model.get_num_bodies()], dtype=torch.float32, device=self._device)
+                contacts = torch.zeros(size=[num_motions, num_frames, self._kin_char_model.get_num_contact_bodies()],
+                                       dtype=torch.float32, device=self._device)
             else:
                 contacts = frames.contacts
             if contacts.dim() == 2:
@@ -219,7 +220,7 @@ class MotionLib():
         if num_frames > 1:
             self._frame_root_ang_vel[..., -1, :] = self._frame_root_ang_vel[..., -2, :]
 
-        self._frame_dof_vel = self._kin_char_model.compute_frame_dof_vel(self._frame_joint_rot, fps)
+        self._frame_dof_vel = self._kin_char_model.compute_frame_dof_vel(self._frame_joint_rot, 1.0 / fps)
 
 
         # must reararange the self._frame_X vars so that their shape goes from
@@ -288,6 +289,9 @@ class MotionLib():
             
             curr_file_data = file_io_helper.load_ms_file(curr_file, device=self._device)
             curr_motion_data = curr_file_data.motion_data
+            if curr_motion_data is None:
+                raise ValueError("{} has no motion data (a terrain-only MS file?); "
+                                 "MotionLib needs motion frames".format(curr_file))
 
             fps = curr_motion_data.fps
             loop_mode = LoopMode[curr_motion_data.loop_mode].value
@@ -347,8 +351,9 @@ class MotionLib():
                 if curr_motion_data.body_contacts is not None:
                     contacts = curr_motion_data.body_contacts
                 else:
-                    num_joints = self._kin_char_model.get_num_joints()
-                    contacts = torch.zeros(size=[num_frames, num_joints], dtype=torch.float32, device=self._device)
+                    # contacts are stored per contact body, not per joint
+                    num_contact_bodies = self._kin_char_model.get_num_contact_bodies()
+                    contacts = torch.zeros(size=[num_frames, num_contact_bodies], dtype=torch.float32, device=self._device)
 
                 self._frame_contacts.append(contacts)
 
