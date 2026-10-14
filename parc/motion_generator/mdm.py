@@ -847,12 +847,16 @@ class MDM(MotionGenerator):
         use_cfg = MDMKeyType.GUIDANCE_PARAMS in conds and conds[MDMKeyType.GUIDANCE_PARAMS].obs_cfg_scale is not None
         with torch.no_grad():
             if use_cfg:
-
-                conds[MDMKeyType.PREV_STATE_NOISE_IND_KEY][:] = True
-                conds[MDMKeyType.PREV_STATE_FLAG_KEY][:] = True
+                # Replace the flag tensors rather than writing into them: callers such as
+                # gen_util pass expand()ed views, and torch >= 2 rejects in-place writes
+                # into those (torch 1.13 allowed them). Readers see the same values.
+                noise_ind = conds[MDMKeyType.PREV_STATE_NOISE_IND_KEY]
+                prev_state_flag = conds[MDMKeyType.PREV_STATE_FLAG_KEY]
+                conds[MDMKeyType.PREV_STATE_NOISE_IND_KEY] = torch.ones_like(noise_ind)
+                conds[MDMKeyType.PREV_STATE_FLAG_KEY] = torch.ones_like(prev_state_flag)
                 x_0 = self._denoise_model.fast_forward(x_t, conds, t, cond_tokens, key_padding_mask)
-                conds[MDMKeyType.PREV_STATE_NOISE_IND_KEY][:] = False
-                conds[MDMKeyType.PREV_STATE_FLAG_KEY][:] = False
+                conds[MDMKeyType.PREV_STATE_NOISE_IND_KEY] = torch.zeros_like(noise_ind)
+                conds[MDMKeyType.PREV_STATE_FLAG_KEY] = torch.zeros_like(prev_state_flag)
                 x_0_no_prev_state = self._denoise_model.forward(x_t, conds, t)# cond_tokens, key_padding_mask)
                 cfg_scale = conds[MDMKeyType.GUIDANCE_PARAMS].obs_cfg_scale
                 predicted_x_0 = x_0 + cfg_scale * (x_0_no_prev_state - x_0)
