@@ -1,0 +1,26 @@
+# Unitree G1 variant of create_dataset_config.yaml (develop PARC/create_dataset_config.yaml,
+# with $DATA_DIR paths and the MS-converted initial dataset).
+# Build it with: python -m scripts.create_dataset_yaml --config data/configs/create_dataset_config_g1.yaml
+# create_dataset re-saves every motion file it reads, in place.
+# parc_0_setup_iter.py overrides save_path and folder_paths (and char_filepath when its
+# config sets char_file).
+save_path: "$DATA_DIR/tests/parc/experiment_g1/iter_1/iter_1_dataset.yaml"
+folder_paths:
+- "$DATA_DIR/tests/parc/experiment_g1/iter_1/p4_phys_record/recorded_motions/"
+- "$DATA_DIR/Data/initial_retargeted_g1_processed_ms/"
+char_filepath: "data/assets/unitree_g1/g1_mocap_29dof.xml"
+compute_preprocessing_data: true
+override_old_hf_mask_inds: false
+cut_some_classes_in_half: true
+motion_classes_to_cut_in_half:
+- "running"
+- "platform"
+- "vaulting"
+- "climbing"
+- "mid_climbing"
+- "stairs"
+- "jumping"
+max_terrain_dim_x: 45
+max_terrain_dim_y: 45
+# The MDM sampler needs motions longer than its sequence (0.5 s at 30 fps = 15 frames).
+min_num_frames: 16

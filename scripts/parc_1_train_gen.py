@@ -128,7 +128,8 @@ def train_mdm(config, input_mdm=None):
             mode = 'offline'
         )
     
-    diffusion_model.train(motion_sampler, checkpoint_dir, stats_filepath=config["sampler_stats_filepath"])
+    # Without sampler_stats_filepath, MDM.compute_stats uses <sampler_save_filepath stem>_stats.txt
+    diffusion_model.train(motion_sampler, checkpoint_dir, stats_filepath=config.get("sampler_stats_filepath"))
 
 
     output_model_path = output_dir / "final_model.ckpt"

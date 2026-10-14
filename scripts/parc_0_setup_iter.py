@@ -27,6 +27,13 @@ def setup_iter(config):
     write_tracker = config["write_tracker"]
     write_phys_record = config["write_phys_record"]
 
+    # Optional: one character file for every stage (MDM, kin gen optimization,
+    # datasets and the tracker env), replacing the char files of the input configs.
+    char_file = config.get("char_file", None)
+    if char_file is not None:
+        char_file = str(char_file)
+        assert Path(char_file).is_file(), char_file + " is not a valid path"
+
     ##### PARC 1 - TRAIN GEN #####
     input_mdm_config_path = Path(config["input_mdm_config_path"])
     input_mdm_model_path = config["input_mdm_model_path"]
@@ -86,12 +93,16 @@ def setup_iter(config):
 
 
     dataset_config = path_loader.load_config(input_create_dataset_config_path)
+    if char_file is not None:
+        dataset_config["char_filepath"] = char_file
 
 
     # first create MDM training config
     print("********** CREATING PARC 1 TRAIN GEN CONFIGS **********")
     mdm_config = path_loader.load_config(input_mdm_config_path)
     mdm_config["motion_lib_file"] = str(iter_start_dataset_path)
+    if char_file is not None:
+        mdm_config["char_file"] = char_file
     if input_mdm_model_path is not None:
         mdm_config["input_model_path"] = str(input_mdm_model_path)
     else:
@@ -132,6 +143,8 @@ def setup_iter(config):
         mdm_procgen_config["output_dir"] = raw_kin_gen_output_dir
         mdm_procgen_config["opt"]["output_dir"] = opt_kin_gen_output_dir
         mdm_procgen_config["opt"]["use_wandb"] = False
+        if char_file is not None:
+            mdm_procgen_config["opt"]["char_model"] = char_file
         mdm_procgen_config["motion_id_offset"] = curr_motion_id_offset
         mdm_procgen_config["num_new_motions"] = kin_gen_num_motions_per_batch
         mdm_procgen_config["save_name"] = kin_gen_save_name
@@ -150,6 +163,15 @@ def setup_iter(config):
     tracker_config["in_model_file"] = str(input_tracker_model_path)
     tracker_config["output_dir"] = str(output_tracker_dir)
 
+    tracker_env_config = None
+    if char_file is not None:
+        # parc_3 reads env_config and writes the env it trains with to p3_tracker/dm_env.yaml;
+        # point it at a copy of the env config with the char file replaced.
+        tracker_env_config = path_loader.load_config(tracker_config["env_config"])
+        tracker_env_config["env"]["char_file"] = char_file
+        tracker_env_config_path = output_tracker_dir / "input_dm_env.yaml"
+        tracker_config["env_config"] = str(tracker_env_config_path)
+
     tracker_dataset_path = output_tracker_dir / "motions.yaml"
     tracker_create_data_config_path = output_tracker_dir / "create_dataset_config.yaml"
     tracker_config["create_dataset_config"] = str(tracker_create_data_config_path)
@@ -158,6 +180,8 @@ def setup_iter(config):
     tracker_config["dataset_file"] = str(tracker_dataset_path)
     if write_tracker:
         os.makedirs(output_tracker_dir, exist_ok=True)
+        if tracker_env_config is not None:
+            tracker_env_config_path.write_text(yaml.safe_dump(tracker_env_config))
         output_tracker_config_simple_path.write_text(yaml.dump(tracker_config))
         output_tracker_config_path.write_text(yaml.dump(tracker_config))
         tracker_create_data_config_path.write_text(yaml.dump(dataset_config))
