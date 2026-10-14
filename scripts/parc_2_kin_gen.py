@@ -152,9 +152,10 @@ def load_mdm(mdm_path, device=cuda_device) -> mdm.MDM:
 def mdm_procgen(config, input_mdm_model = None):
     use_opt = config["use_opt"]
     remove_hesitation = config["remove_hesitation"]
-    max_contact_loss = config["max_contact_loss"]
-    max_pen_loss = config["max_pen_loss"]
-    max_total_loss = config["max_total_loss"]
+    # float(): PyYAML reads exponent notation without a sign (1e9) as a string
+    max_contact_loss = float(config["max_contact_loss"])
+    max_pen_loss = float(config["max_pen_loss"])
+    max_total_loss = float(config["max_total_loss"])
     motion_id_offset = config["motion_id_offset"]
     num_new_motions = config["num_new_motions"]
     new_terrain_dim_x = config["new_terrain_dim_x"]
