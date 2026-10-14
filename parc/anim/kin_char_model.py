@@ -2,7 +2,7 @@ import copy
 import enum
 import os
 import xml.etree.ElementTree as ET
-from typing import List, Union
+from typing import Dict, List, Optional, Union
 
 import numpy as np
 import torch
@@ -11,6 +11,16 @@ import trimesh as trimesh
 import parc.util.torch_util as torch_util
 
 _EPS = 1e-6
+
+# Canonical body names used by PARC code and configs, mapped to the matching links of other
+# characters (e.g. the Unitree G1). Name lookups try the exact name first, then these
+# candidates in order.
+BODY_NAME_ALIASES: Dict[str, List[str]] = {
+    "left_foot": ["left_ankle_roll_link"],
+    "right_foot": ["right_ankle_roll_link"],
+    "left_hand": ["left_wrist_yaw_link", "left_rubber_hand"],
+    "right_hand": ["right_wrist_yaw_link", "right_rubber_hand"],
+}
 
 class JointType(enum.Enum):
     ROOT = 0
@@ -235,6 +245,8 @@ class KinCharModel():
     def load_char_file(self, char_file):
         tree = ET.parse(char_file)
         xml_doc_root = tree.getroot()
+        self._angle_scale = self._parse_angle_scale(xml_doc_root)
+
         xml_world_body = xml_doc_root.find("worldbody")
         assert(xml_world_body is not None)
 
@@ -311,21 +323,20 @@ class KinCharModel():
                 xml_root (xml.etree.ElementTree.Element): The root element of the parsed MuJoCo XML.
 
             Returns:
-                str: The default geom type or None if not specified.
+                GeomType: The default geom type, or SPHERE (MuJoCo's default) if not specified.
             """
             # Find the <default> section
             shape_type = None
             default_elem = xml_root.find('default')
             if default_elem is not None:
-                # Check for the first <geom> in the <default> section
+                # Check for the first <geom> in the <default> section, then in its first nested <default>
                 geom_elem = default_elem.find('geom')
+                if geom_elem is None:
+                    second_default_elem = default_elem.find('default')
+                    if second_default_elem is not None:
+                        geom_elem = second_default_elem.find('geom')
                 if geom_elem is not None:
                     shape_type = geom_elem.attrib.get('type', None)  # Default type if specified
-                else:
-                    second_default_elem = default_elem.find('default')
-                    geom_elem = second_default_elem.find('geom')
-                    if geom_elem is not None:
-                        shape_type = geom_elem.attrib.get('type', None)  # Default type if specified
 
             if shape_type == "sphere":
                 shape_type = GeomType.SPHERE
@@ -692,13 +703,36 @@ class KinCharModel():
     def get_body_name(self, body_id):
         return self._body_names[body_id]
 
+    def _find_body_name(self, body_name: str) -> Optional[str]:
+        if body_name in self._name_body_map:
+            return body_name
+        for alias in BODY_NAME_ALIASES.get(body_name, []):
+            if alias in self._name_body_map:
+                return alias
+        return None
+
+    def has_body(self, body_name: str) -> bool:
+        """Returns True if ``body_name`` is a body of this model, directly or via ``BODY_NAME_ALIASES``."""
+        return self._find_body_name(body_name) is not None
+
+    def resolve_body_name(self, body_name: str) -> str:
+        """Returns this model's name for ``body_name``: the name itself if the model has such a
+        body, else the first of its ``BODY_NAME_ALIASES`` candidates that the model has.
+
+        Raises:
+            AssertionError: if neither exists; the message lists the model's body names.
+        """
+        resolved_name = self._find_body_name(body_name)
+        if resolved_name is None:
+            raise AssertionError("Body '{}' not found in character model (aliases tried: {}). Available bodies: {}".format(
+                body_name, BODY_NAME_ALIASES.get(body_name, []), self._body_names))
+        return resolved_name
+
     def get_body_id(self, body_name):
-        assert body_name in self._name_body_map
-        return self._name_body_map[body_name]
+        return self._name_body_map[self.resolve_body_name(body_name)]
 
     def get_joint_id(self, body_name):
-        assert body_name in self._name_body_map
-        return self._name_body_map[body_name] -1 # joint arrays exclude the root
+        return self.get_body_id(body_name) - 1 # joint arrays exclude the root
 
     def _resolve_body_id(self, body: Union[int, str]) -> int:
         if isinstance(body, str):
@@ -819,6 +853,9 @@ class KinCharModel():
         return joint
     
     def _parse_joint(self, body_name, xml_joint_data, default_joint_type):
+        if (default_joint_type is None):
+            default_joint_type = "hinge" # MuJoCo's built-in default joint type
+
         num_joints = len(xml_joint_data)
 
         if (num_joints == 0):
@@ -835,7 +872,7 @@ class KinCharModel():
             elif (joint_type_str == "fixed"):
                 joint = self._parse_fixed_joint(body_name)
             else:
-                assert(False), "Unsupported joint type: {:s}".format(joint_type_str)
+                assert(False), "Unsupported joint type: {}".format(joint_type_str)
         else:
             assert(False), "Series joints are not supported."
         
@@ -858,7 +895,7 @@ class KinCharModel():
             assert(False), "Need joint limits"
         joint_limits = np.fromstring(joint_limits_str, dtype=float, sep=" ")
         joint_limits = torch.from_numpy(joint_limits).to(dtype=torch.float32, device=self._device)
-        joint_limits *= torch.pi / 180.0
+        joint_limits *= self._angle_scale
 
         joint = Joint(name=joint_name,
                       joint_type=JointType.HINGE,
@@ -896,7 +933,7 @@ class KinCharModel():
 
         joint_limits = np.stack(joint_limits)
         joint_limits = torch.from_numpy(joint_limits).to(dtype=torch.float32, device=self._device)
-        joint_limits *= torch.pi / 180.0
+        joint_limits *= self._angle_scale
         if (is_spherical):
             joint_name = xml_joint_data[0].attrib.get("name")
             joint_name = joint_name[:joint_name.rfind('_')]
@@ -942,20 +979,36 @@ class KinCharModel():
                 dof_idx += dof_dim
         return dof_idx
 
-    def _parse_default_joint_type(self, xml_node):
-        default_data = xml_node.find("default")
-        default_data = default_data.findall("default")
+    def _parse_angle_scale(self, xml_doc_root):
+        # scale from MJCF angles to radians: MuJoCo reads angles in degrees unless <compiler angle="radian"/>
+        compiler_elem = xml_doc_root.find("compiler")
+        angle_unit = None if compiler_elem is None else compiler_elem.attrib.get("angle")
+        if (angle_unit == "radian"):
+            return 1.0
 
-        joint_type_str = None
-        for data in default_data:
+        if (angle_unit not in [None, "degree"]):
+            print("Warning: unsupported <compiler angle=\"{}\">, reading joint ranges as degrees".format(angle_unit))
+        return torch.pi / 180.0
+
+    def _parse_default_joint_type(self, xml_node):
+        # Joint type from <default><default class="body"><joint type=.../>, else from
+        # <default><joint type=.../>. Returns None if neither sets one.
+        default_elem = xml_node.find("default")
+        if (default_elem is None):
+            return None
+
+        for data in default_elem.findall("default"):
             class_data = data.attrib.get("class")
             if (class_data == "body"):
                 joint_data = data.find("joint")
-                if (joint_data is not None):
-                    joint_type_str = joint_data.attrib.get("type")
-                    break
+                if (joint_data is not None and joint_data.attrib.get("type") is not None):
+                    return joint_data.attrib.get("type")
 
-        return joint_type_str
+        joint_data = default_elem.find("joint")
+        if (joint_data is not None):
+            return joint_data.attrib.get("type")
+
+        return None
 
     def _build_body_children_map(self):
         num_joints = self.get_num_joints()
