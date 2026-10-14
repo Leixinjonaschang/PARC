@@ -14,9 +14,9 @@ export PARC_DATA_DIR=/home/ubuntu/projects/parkour_sgs   # any existing director
 export WANDB_MODE=disabled
 ```
 
-With `use_wandb: False`, parc_1 and the motion optimization still call
-`wandb.init(mode="offline")`, which writes local runs under `$WANDB_DIR/wandb/`
-(hence `WANDB_DIR=...` below). Nothing is uploaded.
+With `use_wandb: False`, parc_1 still calls `wandb.init(mode="offline")`, which writes a
+local run under `$WANDB_DIR/wandb/` (hence `WANDB_DIR=...` below). Nothing is uploaded.
+The motion optimization of stage 2 starts no wandb run when its `use_wandb` is false.
 
 Stages 1 and 2 run on `cuda:0`; check `nvidia-smi` first. Reference times are from a
 shared L40S machine (2026-10-14).

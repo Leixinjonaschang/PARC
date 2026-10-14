@@ -15,7 +15,7 @@ class WandbLogger(logger.Logger):
         self._connect_to_wandb = connect_to_wandb
         self._exp_name = exp_name
         self._param_config = param_config
-        self._step_var_key = None
+        self._step_key = None
         self._collections = dict()
 
         return
@@ -27,7 +27,8 @@ class WandbLogger(logger.Logger):
     def configure_output_file(self, filename=None):
         super().configure_output_file(filename)
 
-        if (logger.Logger.is_root):
+        # Starts the wandb run, an offline one when connect_to_wandb is false.
+        if (logger.Logger.is_root()):
             if self._connect_to_wandb:
                 wandb.init(project=self._project_name, name=self._exp_name, config=self._param_config)
             else:

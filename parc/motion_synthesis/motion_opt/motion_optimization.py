@@ -12,6 +12,7 @@ import parc.util.terrain_util as terrain_util
 import parc.util.geom_util as geom_util
 import parc.util.wandb_logger as wandb_logger
 import parc.util.motion_util as motion_util
+from parc.util.logger import Logger
 
 class LossType(enum.Enum):
     ROOT_POS_LOSS = 0
@@ -775,8 +776,12 @@ def simplified_motion_loss(tgt_root_pos: torch.Tensor,
 
 
 def build_logger(log_file, exp_name=None, use_wandb=True):
-    log = wandb_logger.WandbLogger(project_name="motion optimization", exp_name=exp_name, connect_to_wandb=use_wandb)
-    log.set_step_key("Iteration")
+    if use_wandb:
+        log = wandb_logger.WandbLogger(project_name="motion optimization", exp_name=exp_name, connect_to_wandb=True)
+        log.set_step_key("Iteration")
+    else:
+        # console and log_file only: a WandbLogger would start an offline wandb run for every motion
+        log = Logger()
     if (log_file is not None):
         log.configure_output_file(log_file)
     return log

@@ -28,7 +28,7 @@ CONFIG_DIR = REPO_ROOT / "parc" / "motion_synthesis" / "motion_opt" / "config"
 @pytest.fixture(autouse=True)
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("PARC_DATA_DIR", str(tmp_path))
-    # the optimizer's logger starts an (offline) wandb run whenever it writes a log file
+    # no wandb run from the tests (the configs set use_wandb: false, which starts none)
     monkeypatch.setattr(wandb_logger.wandb, "init", lambda *args, **kwargs: None)
 
 
