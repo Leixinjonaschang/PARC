@@ -43,7 +43,8 @@ class MotionFrames:
         root_pos = root_pos.to(device=device, dtype=torch.float32)
         root_rot = root_rot.to(device=device, dtype=torch.float32)
         joint_rot = joint_rot.to(device=device, dtype=torch.float32)
-        contacts = contacts.to(device=device, dtype=torch.float32)
+        if contacts is not None: # body_contacts is optional in MS files
+            contacts = contacts.to(device=device, dtype=torch.float32)
 
         inst = cls(root_pos = root_pos,
                    root_rot = root_rot,
